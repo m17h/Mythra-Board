@@ -34,15 +34,12 @@ export const rectOf = (n: BoardNode): Rect => ({
 });
 
 /**
- * Display-only settings React Flow needs on each item: frames sit underneath everything
- * and can only be dragged by their title, and text items grow with their content.
+ * Display-only settings React Flow needs on each item: sections sit underneath everything,
+ * and text items grow with their content.
  */
 export function decorate(n: BoardNode): BoardNode {
   const out: BoardNode = { ...n };
-  if (n.type === "frame") {
-    out.zIndex = -1;
-    out.dragHandle = ".frame__title";
-  }
+  if (n.type === "frame") out.zIndex = -1;
   if (AUTO_HEIGHT.has(n.type)) {
     out.initialHeight = n.initialHeight ?? n.height ?? NEW_NOTE_HEIGHT;
     delete out.height;

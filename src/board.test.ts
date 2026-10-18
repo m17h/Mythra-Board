@@ -353,3 +353,81 @@ describe("templates", () => {
     }
   });
 });
+
+describe("snapping", () => {
+  it("snaps to the nearest edge or centre and reports a guide", async () => {
+    const { snapMove } = await import("./snap");
+    const other = rect(0, 0, 200, 60);
+    // Left edge 4px away from the other's left edge.
+    const r = snapMove(rect(4, 200, 200, 60), [other], 6);
+    expect(r.dx).toBe(-4);
+    expect(r.dy).toBe(0);
+    expect(r.guides.some((g) => g.axis === "x" && g.at === 0 && g.from === 0 && g.to === 260)).toBe(true);
+    // Too far away: no snap, no guides.
+    const far = snapMove(rect(20, 200, 140, 60), [other], 6);
+    expect([far.dx, far.dy, far.guides.length]).toEqual([0, 0, 0]);
+    // Centres line up even when sizes differ.
+    expect(snapMove(rect(52, 300, 100, 40), [other], 6).dx).toBe(-2);
+  });
+
+  it("snaps a dragged note into line with its neighbour", () => {
+    const s = createBoardStore();
+    const a = s.getState().addNote({ x: 0, y: 0 }, { data: { text: "a" } });
+    const b = s.getState().addNote({ x: 0, y: 300 }, { data: { text: "b" } });
+    s.getState().beginDrag([b]);
+    s.getState().onNodesChange([{ type: "position", id: b, position: { x: 3, y: 300 }, dragging: true }]);
+    expect(s.getState().nodes.find((n) => n.id === b)!.position.x).toBe(0);
+    expect(s.getState().guides.length).toBeGreaterThan(0);
+    s.getState().endDrag();
+    expect(s.getState().guides).toEqual([]);
+    s.getState().setSnapping(false);
+    s.getState().beginDrag([b]);
+    s.getState().onNodesChange([{ type: "position", id: b, position: { x: 3, y: 300 }, dragging: true }]);
+    s.getState().endDrag();
+    expect(s.getState().nodes.find((n) => n.id === b)!.position.x).toBe(3);
+    void a;
+  });
+
+  it("highlights the section a note is dragged into", () => {
+    const s = createBoardStore();
+    s.getState().setSnapping(false);
+    const f = s.getState().addItem("frame", { x: 0, y: 0 }, { width: 500, height: 400 });
+    const n = s.getState().addNote({ x: 800, y: 0 }, { data: { text: "n" } });
+    s.getState().beginDrag([n]);
+    s.getState().onNodesChange([{ type: "position", id: n, position: { x: 100, y: 100 }, dragging: true }]);
+    expect(s.getState().dropFrameId).toBe(f);
+    s.getState().endDrag();
+    expect(s.getState().dropFrameId).toBeNull();
+  });
+});
+
+describe("arranging", () => {
+  it("brings items to the front and back, keeping sections underneath", () => {
+    const s = createBoardStore();
+    const a = s.getState().addNote({ x: 0, y: 0 }, { data: { text: "a" } });
+    const b = s.getState().addNote({ x: 0, y: 0 }, { data: { text: "b" } });
+    const f = s.getState().addItem("frame", { x: 0, y: 0 });
+    s.getState().reorder([a], "front");
+    expect(s.getState().nodes.map((n) => n.id)).toEqual([f, b, a]);
+    s.getState().reorder([a], "back");
+    expect(s.getState().nodes.map((n) => n.id)).toEqual([f, a, b]);
+    s.getState().undo();
+    expect(s.getState().nodes.map((n) => n.id)).toEqual([f, b, a]);
+  });
+
+  it("copies a section together with everything inside it", () => {
+    const s = createBoardStore();
+    const f = s.getState().addItem("frame", { x: 0, y: 0 }, { width: 500, height: 400 });
+    const a = s.getState().addNote({ x: 50, y: 50 }, { data: { text: "a" } });
+    const b = s.getState().addNote({ x: 50, y: 200 }, { data: { text: "b" } });
+    s.getState().addNote({ x: 900, y: 0 }, { data: { text: "outside" } });
+    s.getState().connect(a, b);
+    s.getState().selectOnly([f]);
+    s.getState().duplicateSelection();
+    expect(s.getState().nodes).toHaveLength(7);
+    expect(s.getState().edges).toHaveLength(2);
+    expect(s.getState().nodes.filter((n) => n.type === "frame")).toHaveLength(2);
+    expect(s.getState().nodes[0].type).toBe("frame");
+    expect(s.getState().nodes[1].type).toBe("frame");
+  });
+});

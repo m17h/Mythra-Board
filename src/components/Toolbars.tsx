@@ -142,7 +142,7 @@ export function SelectionToolbar() {
   const strong = colored.every((i) => i.type === "ink" || i.type === "text");
 
   return (
-    <NodeToolbar nodeId={ids} isVisible={!hidden} position={Position.Top} offset={14}>
+    <NodeToolbar nodeId={ids} isVisible={!hidden} position={Position.Top} offset={items.some((i) => i.type === "frame") ? 48 : 14}>
       <div className="floating-bar" onDoubleClick={(e) => e.stopPropagation()}>
         {colored.length > 0 && (
           <>

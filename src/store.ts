@@ -8,8 +8,9 @@ import {
 } from "@xyflow/react";
 import { nanoid } from "nanoid";
 import { createStore, useStore } from "zustand";
-import { rectsBounds, type Point } from "./geometry";
+import { center, containsPoint, rectsBounds, type Point } from "./geometry";
 import { decorate, defaultSize, freeSpot, itemsInFrame, rectOf } from "./layout";
+import { snapMove, type Guide } from "./snap";
 import {
   AUTO_HEIGHT,
   LINKABLE,
@@ -43,6 +44,30 @@ export type BoardDoc = {
 };
 
 const HISTORY_LIMIT = 200;
+/** How close (in screen pixels) an edge must be before it snaps. */
+const SNAP_DISTANCE = 6;
+/** Only items this close to the dragged ones are considered for snapping. */
+const SNAP_RANGE = 3000;
+const SNAP_KEY = "mythra-board:snapping";
+
+let snapZoom = 1;
+let snapPaused = false;
+/** Tell snapping the current zoom, so the snap distance feels the same at any zoom. */
+export const setSnapZoom = (zoom: number) => {
+  snapZoom = zoom || 1;
+};
+/** Holding Option drags freely. */
+export const pauseSnapping = (paused: boolean) => {
+  snapPaused = paused;
+};
+const readSnapping = () => {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem(SNAP_KEY) !== "0";
+  } catch {
+    return true;
+  }
+};
 const PASTE_OFFSET = 32;
 const FRAME_PADDING = 36;
 
@@ -64,6 +89,11 @@ export type BoardState = {
   editingLabelId: string | null;
   connecting: boolean;
   linkStyle: LinkStyle;
+  /** Line items up with each other while dragging. */
+  snapping: boolean;
+  guides: Guide[];
+  /** The section that dragged items are over. */
+  dropFrameId: string | null;
   past: string[];
   future: string[];
 
@@ -118,6 +148,8 @@ export type BoardState = {
   /** Remove items without recording a step; wrap in begin/commit (used by the eraser). */
   eraseNodes: (ids: string[]) => void;
   nudgeSelection: (dx: number, dy: number) => void;
+  reorder: (ids: string[], to: "front" | "back") => void;
+  setSnapping: (on: boolean) => void;
   copySelection: () => Clip | null;
   paste: (clip: Clip, at?: Point) => void;
   duplicateSelection: () => void;
@@ -211,6 +243,7 @@ export function createBoardStore() {
   let fresh: { id: string; historyLength: number } | null = null;
   // Items riding along with frames that are being dragged.
   let dragChildren = new Map<string, string[]>();
+  let dragActive = false;
 
   return createStore<BoardState>()((set, get) => {
     const snapshot = () => serialize(get().nodes, get().edges);
@@ -270,33 +303,86 @@ export function createBoardStore() {
       editingLabelId: null,
       connecting: false,
       linkStyle: { curve: "curved", arrow: "end", dash: "solid" },
+      snapping: readSnapping(),
+      guides: [],
+      dropFrameId: null,
       past: [],
       future: [],
 
       onNodesChange: (changes) => {
         const removed = new Set(changes.filter((c) => c.type === "remove").map((c) => c.id));
-        const extra: NodeChange<BoardNode>[] = [];
-        if (dragChildren.size) {
+        // The final change when a drag ends has `dragging: false` but must be snapped too,
+        // or the item jumps back to the raw pointer position when you let go.
+        const drags = changes.filter(
+          (c): c is NodeChange<BoardNode> & { type: "position" } =>
+            c.type === "position" && !!c.position && (!!c.dragging || dragActive),
+        );
+        let all = changes;
+        if (drags.length) {
           const byId = new Map(get().nodes.map((n) => [n.id, n]));
-          const moving = new Set(changes.filter((c) => c.type === "position").map((c) => c.id));
-          for (const c of changes) {
-            if (c.type !== "position" || !c.position) continue;
+          const moving = new Set(drags.map((c) => c.id));
+          for (const c of drags) for (const k of dragChildren.get(c.id) ?? []) moving.add(k);
+
+          // Line the dragged items up with their neighbours.
+          const rects = drags.flatMap((c) => {
+            const n = byId.get(c.id);
+            return n ? [{ ...rectOf(n), x: c.position!.x, y: c.position!.y }] : [];
+          });
+          const group = rectsBounds(rects);
+          let guides: Guide[] = [];
+          let dropFrameId: string | null = null;
+          if (group) {
+            if (get().snapping && !snapPaused) {
+              const others = get()
+                .nodes.filter((n) => !moving.has(n.id) && n.type !== "ink")
+                .map(rectOf)
+                .filter((r) => Math.abs(r.x - group.x) < SNAP_RANGE && Math.abs(r.y - group.y) < SNAP_RANGE);
+              const snap = snapMove(group, others, SNAP_DISTANCE / snapZoom);
+              guides = snap.guides;
+              if (snap.dx || snap.dy) {
+                for (const c of drags) c.position = { x: c.position!.x + snap.dx, y: c.position!.y + snap.dy };
+                group.x += snap.dx;
+                group.y += snap.dy;
+              }
+            }
+            // Show which section the dragged items will land in.
+            if (!drags.some((c) => byId.get(c.id)?.type === "frame")) {
+              const mid = center(group);
+              let best = Infinity;
+              for (const n of get().nodes) {
+                if (n.type !== "frame" || moving.has(n.id)) continue;
+                const r = rectOf(n);
+                if (containsPoint(r, mid) && r.width * r.height < best) {
+                  best = r.width * r.height;
+                  dropFrameId = n.id;
+                }
+              }
+            }
+          }
+          if (JSON.stringify(guides) !== JSON.stringify(get().guides)) set({ guides });
+          if (dropFrameId !== get().dropFrameId) set({ dropFrameId });
+
+          // Sections carry their contents along.
+          const extra: NodeChange<BoardNode>[] = [];
+          const placed = new Set(drags.map((c) => c.id));
+          for (const c of drags) {
             const kids = dragChildren.get(c.id);
             const frame = byId.get(c.id);
             if (!kids || !frame) continue;
-            const dx = c.position.x - frame.position.x;
-            const dy = c.position.y - frame.position.y;
+            const dx = c.position!.x - frame.position.x;
+            const dy = c.position!.y - frame.position.y;
             if (!dx && !dy) continue;
             for (const k of kids) {
               const n = byId.get(k);
-              if (!n || moving.has(k)) continue;
-              moving.add(k);
+              if (!n || placed.has(k)) continue;
+              placed.add(k);
               extra.push({ type: "position", id: k, position: { x: n.position.x + dx, y: n.position.y + dy } });
             }
           }
+          if (extra.length) all = [...changes, ...extra];
         }
         set((s) => ({
-          nodes: applyNodeChanges(extra.length ? [...changes, ...extra] : changes, s.nodes),
+          nodes: applyNodeChanges(all, s.nodes),
           edges: removed.size ? s.edges.filter((e) => !removed.has(e.source) && !removed.has(e.target)) : s.edges,
         }));
       },
@@ -332,6 +418,7 @@ export function createBoardStore() {
 
       beginDrag: (ids) => {
         get().begin();
+        dragActive = true;
         const dragged = new Set(ids);
         const nodes = get().nodes;
         dragChildren = new Map();
@@ -341,7 +428,9 @@ export function createBoardStore() {
         }
       },
       endDrag: () => {
+        dragActive = false;
         dragChildren = new Map();
+        set({ guides: [], dropFrameId: null });
         get().commit();
       },
 
@@ -585,6 +674,28 @@ export function createBoardStore() {
         }));
       },
 
+      reorder: (ids, to) => {
+        const idSet = new Set(ids);
+        record(() =>
+          set((s) => {
+            const picked = s.nodes.filter((n) => idSet.has(n.id));
+            const rest = s.nodes.filter((n) => !idSet.has(n.id));
+            const nodes = to === "front" ? [...rest, ...picked] : [...picked, ...rest];
+            return { nodes: withFramesFirst(nodes) };
+          }),
+        );
+      },
+
+      setSnapping: (snapping) => {
+        set({ snapping });
+        if (typeof window === "undefined") return;
+        try {
+          localStorage.setItem(SNAP_KEY, snapping ? "1" : "0");
+        } catch {
+          // Not being able to remember the setting is harmless.
+        }
+      },
+
       nudgeSelection: (dx, dy) => {
         if (!get().nodes.some((n) => n.selected)) return;
         record(() =>
@@ -597,9 +708,12 @@ export function createBoardStore() {
       },
 
       copySelection: () => {
-        const nodes = get().nodes.filter((n) => n.selected).map(cleanNode);
-        if (!nodes.length) return null;
-        const ids = new Set(nodes.map((n) => n.id));
+        const all = get().nodes;
+        const ids = new Set(all.filter((n) => n.selected).map((n) => n.id));
+        if (!ids.size) return null;
+        // A section brings everything inside it along.
+        for (const n of all) if (n.type === "frame" && ids.has(n.id)) for (const k of itemsInFrame(n, all)) ids.add(k);
+        const nodes = all.filter((n) => ids.has(n.id)).map(cleanNode);
         const links = get()
           .edges.filter((e) => ids.has(e.source) && ids.has(e.target))
           .map(cleanEdge);

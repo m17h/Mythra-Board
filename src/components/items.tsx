@@ -1,10 +1,10 @@
-import type { NodeProps } from "@xyflow/react";
+import { useReactFlow, type NodeProps } from "@xyflow/react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { hostOf } from "../images";
 import { strokePath } from "../ink";
 import { assetUrl, openExternal } from "../persistence";
 import { boardStore, useBoard } from "../store";
-import type { BoardNode } from "../types";
+import { DEFAULT_NOTE_WIDTH, type BoardNode } from "../types";
 import { GlobeIcon, OpenIcon } from "./icons";
 import { BoxResizer, LinkHandles, TextEditor, WidthResizers } from "./itemParts";
 import RichText, { taskStats } from "./RichText";
@@ -117,12 +117,23 @@ export const ImageItem = memo(function ImageItem({ id, data, selected, dragging 
   );
 });
 
-/** A titled area for grouping things. Dragging it by its title moves everything inside. */
+/** A titled area for grouping things. Dragging it moves everything inside. */
 export const FrameItem = memo(function FrameItem({ id, data, selected }: NodeProps<BoardNode>) {
   const editing = useEditing(id);
+  const dropTarget = useBoard((s) => s.dropFrameId === id);
+  const rf = useReactFlow();
   return (
-    <div className={cls("frame", `color--${data.color}`, selected && "is-selected", editing && "is-editing")}>
-      <div className="frame__title" onDoubleClick={startEditing(id)} title="Drag to move this section and everything in it">
+    <div
+      className={cls("frame", `color--${data.color}`, selected && "is-selected", editing && "is-editing", dropTarget && "is-drop-target")}
+      onDoubleClick={(e) => {
+        // Double-clicking inside a section adds a note there, just like on the open board.
+        if (e.target !== e.currentTarget) return;
+        e.stopPropagation();
+        const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+        boardStore.getState().addNote({ x: p.x - DEFAULT_NOTE_WIDTH / 2, y: p.y - 22 }, { edit: true });
+      }}
+    >
+      <div className="frame__title" onDoubleClick={startEditing(id)} title="Double-click to rename">
         {editing ? (
           <TextEditor id={id} text={data.text} className="frame__input" placeholder="Section name" singleLine />
         ) : (

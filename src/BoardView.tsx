@@ -1,5 +1,6 @@
 import {
   Background,
+  ViewportPortal,
   BackgroundVariant,
   ConnectionMode,
   MiniMap,
@@ -12,6 +13,7 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { CanvasGestures } from "./components/CanvasGestures";
+import { ContextMenu, type MenuTarget } from "./components/ContextMenu";
 import { Dock } from "./components/Dock";
 import { BoardsIcon, FitIcon, HelpIcon, MapIcon, MinusIcon, MoreIcon, PlusIcon, RedoIcon, UndoIcon } from "./components/icons";
 import { nodeTypes } from "./components/items";
@@ -21,7 +23,7 @@ import { LinkToolbar, SelectionToolbar, ToolButton } from "./components/Toolbars
 import { addImages } from "./images";
 import { rectOf } from "./layout";
 import { isTauri, type SaveStatus } from "./persistence";
-import { boardStore, useBoard } from "./store";
+import { boardStore, pauseSnapping, setSnapZoom, useBoard } from "./store";
 import { BACKGROUNDS, DEFAULT_NOTE_WIDTH, type BoardBackground, type BoardNode, type Color, type LinkEdge } from "./types";
 import { useShortcuts } from "./useShortcuts";
 
@@ -49,6 +51,8 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
   const editingId = useBoard((s) => s.editingId);
   const [showHelp, setShowHelp] = useState(false);
   const [showMap, setShowMap] = useState(false);
+  const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const rf = useReactFlow<BoardNode, LinkEdge>();
   const pointer = useRef<{ x: number; y: number } | null>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -64,12 +68,62 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
 
   const pickImage = useCallback(() => fileInput.current?.click(), []);
 
+  const exportPng = useCallback(async () => {
+    const s = boardStore.getState();
+    if (!s.nodes.length) {
+      setNotice("Add something to the board first");
+      return;
+    }
+    s.stopEditing();
+    s.clearSelection();
+    setNotice("Exporting…");
+    // Let the deselection paint so selection outlines don't end up in the picture.
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    try {
+      // Loaded on first use so it doesn't slow down opening the app.
+      const { exportBoardPng } = await import("./exportImage");
+      const saved = await exportBoardPng(boardStore.getState().nodes, s.title);
+      setNotice(saved ? "Exported" : null);
+    } catch (err) {
+      console.error("Export failed", err);
+      setNotice("Couldn't export the board");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!notice || notice === "Exporting…") return;
+    const t = setTimeout(() => setNotice(null), 2500);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  // Modifier keys change how dragging works.
+  useEffect(() => {
+    const track = (e: KeyboardEvent) => {
+      pauseSnapping(e.altKey);
+      // Holding Shift lets a drag inside a section draw a selection box instead of moving it.
+      document.body.classList.toggle("shift-held", e.shiftKey);
+    };
+    const reset = () => {
+      pauseSnapping(false);
+      document.body.classList.remove("shift-held");
+    };
+    window.addEventListener("keydown", track);
+    window.addEventListener("keyup", track);
+    window.addEventListener("blur", reset);
+    return () => {
+      window.removeEventListener("keydown", track);
+      window.removeEventListener("keyup", track);
+      window.removeEventListener("blur", reset);
+    };
+  }, []);
+
   useShortcuts({
     pointer,
     toggleHelp: () => setShowHelp((v) => !v),
     toggleMap: () => setShowMap((v) => !v),
     pickImage,
     goHome: onHome,
+    exportPng: () => void exportPng(),
   });
 
   // Keep an item you've just started typing into on screen.
@@ -115,7 +169,7 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
       if (state.isValid || state.toNode || !state.fromNode) return;
       // Dropped on empty canvas: start a new note there, already linked.
       const target = event.target as Element | null;
-      if (!target?.classList?.contains("react-flow__pane")) return;
+      if (!target?.classList?.contains("react-flow__pane") && !target?.closest?.(".react-flow__node-frame")) return;
       const { clientX, clientY } = "changedTouches" in event ? event.changedTouches[0] : event;
       const p = rf.screenToFlowPosition({ x: clientX, y: clientY });
       boardStore.getState().addConnectedNote(state.fromNode.id, { x: p.x - DEFAULT_NOTE_WIDTH / 2, y: p.y - 22 });
@@ -168,6 +222,32 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
         connectionDragThreshold={4}
         connectOnClick={false}
         onEdgeDoubleClick={(_, edge) => store.startEditingLabel(edge.id)}
+        onNodeClick={(e, node) => {
+          // The note and text tools work inside sections too.
+          if (node.type === "frame" && (tool === "note" || tool === "text")) {
+            store.setTool("select");
+            placeAt(e.clientX, e.clientY, tool);
+          }
+        }}
+        onNodeContextMenu={(e, node) => {
+          e.preventDefault();
+          if (!node.selected) store.selectOnly([node.id]);
+          setMenu({ x: e.clientX, y: e.clientY, kind: "items" });
+        }}
+        onSelectionContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY, kind: "items" });
+        }}
+        onEdgeContextMenu={(e, edge) => {
+          e.preventDefault();
+          store.selectOnly([], [edge.id]);
+          setMenu({ x: e.clientX, y: e.clientY, kind: "link" });
+        }}
+        onPaneContextMenu={(e) => {
+          e.preventDefault();
+          store.clearSelection();
+          setMenu({ x: e.clientX, y: e.clientY, kind: "pane" });
+        }}
         onPaneClick={(e) => {
           store.stopEditing();
           if (tool === "note" || tool === "text") {
@@ -177,7 +257,9 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
           }
         }}
         onDoubleClick={onDoubleClick}
+        onMove={(_, viewport) => setSnapZoom(viewport.zoom)}
         onMoveEnd={(_, viewport) => store.setViewport(viewport)}
+        onInit={(instance) => setSnapZoom(instance.getZoom())}
         defaultViewport={initialViewport.current ?? undefined}
         fitView={fitOnOpen.current}
         fitViewOptions={FIT_OPTIONS}
@@ -211,6 +293,7 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
         <SelectionToolbar />
         <LinkToolbar />
         <CanvasGestures container={container} />
+        <Guides />
         {showMap && (
           <MiniMap<BoardNode>
             pannable
@@ -225,8 +308,7 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
         )}
       </ReactFlow>
 
-      {IS_TAURI && <div className="drag-strip" data-tauri-drag-region />}
-      <TitleBar status={status} onHome={onHome} />
+      <TitleBar status={status} onHome={onHome} onExport={() => void exportPng()} />
 
       {nodes.length === 0 && (
         <div className="empty-hint">
@@ -285,7 +367,36 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
       </div>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onExport={() => void exportPng()} />}
+      {notice && (
+        <div className="toast" role="status">
+          {notice}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Alignment lines shown while dragging. Kept one screen pixel thick at any zoom. */
+function Guides() {
+  const guides = useBoard((s) => s.guides);
+  const zoom = useFlowStore((s) => s.transform[2]);
+  if (!guides.length) return null;
+  const t = 1 / zoom;
+  return (
+    <ViewportPortal>
+      {guides.map((g, i) => (
+        <div
+          key={i}
+          className="guide"
+          style={
+            g.axis === "x"
+              ? { transform: `translate(${g.at - t / 2}px, ${g.from}px)`, width: t, height: g.to - g.from }
+              : { transform: `translate(${g.from}px, ${g.at - t / 2}px)`, width: g.to - g.from, height: t }
+          }
+        />
+      ))}
+    </ViewportPortal>
   );
 }
 
@@ -304,9 +415,10 @@ function HistoryButtons() {
   );
 }
 
-function TitleBar({ status, onHome }: { status: SaveStatus; onHome: () => void }) {
+function TitleBar({ status, onHome, onExport }: { status: SaveStatus; onHome: () => void; onExport: () => void }) {
   const title = useBoard((s) => s.title);
   const background = useBoard((s) => s.background);
+  const snapping = useBoard((s) => s.snapping);
   const [draft, setDraft] = useState<string | null>(null);
   const [showSaved, setShowSaved] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -324,7 +436,7 @@ function TitleBar({ status, onHome }: { status: SaveStatus; onHome: () => void }
   };
 
   return (
-    <div className="title-bar">
+    <div className="title-bar" data-tauri-drag-region={IS_TAURI || undefined}>
       <ToolButton label="All boards (⌘[)" onClick={onHome}>
         <BoardsIcon />
       </ToolButton>
@@ -373,6 +485,23 @@ function TitleBar({ status, onHome }: { status: SaveStatus; onHome: () => void }
                   </button>
                 ))}
               </div>
+              <div className="menu__sep" />
+              <label className="menu__item menu__toggle">
+                <span>Snap to items</span>
+                <input type="checkbox" checked={snapping} onChange={(e) => boardStore.getState().setSnapping(e.target.checked)} />
+                <span className="switch" aria-hidden />
+              </label>
+              <button
+                type="button"
+                className="menu__item"
+                onClick={() => {
+                  setMenu(false);
+                  onExport();
+                }}
+              >
+                <span>Export as PNG…</span>
+                <kbd className="menu__keys">⇧⌘E</kbd>
+              </button>
             </div>
           </>
         )}
@@ -395,6 +524,11 @@ const SHORTCUTS: [string, string][] = [
   ["P / E", "Pen / Eraser"],
   ["I", "Insert an image"],
   ["⌥⌘G", "Put selection in a section"],
+  ["⇧⌘] / ⇧⌘[", "Bring to front / Send to back"],
+  ["Hold ⌥ while dragging", "Move without snapping"],
+  ["⇧ + drag in a section", "Select the items inside it"],
+  ["Right-click", "More options"],
+  ["⇧⌘E", "Export as PNG"],
   ["- [ ] in a note", "A to-do you can tick off"],
   ["# / - / **bold**", "Heading / Bullet / Bold in notes"],
   ["⌫", "Delete selection"],
@@ -406,7 +540,7 @@ const SHORTCUTS: [string, string][] = [
   ["Two-finger scroll", "Pan the board"],
   ["Pinch or ⌘ scroll", "Zoom"],
   ["Space + drag", "Pan"],
-  ["⇧1 / ⇧0", "Fit everything / 100%"],
+  ["⇧1 / ⇧2 / ⇧0", "Fit all / Zoom to selection / 100%"],
   ["⌘[", "Back to all boards"],
 ];
 

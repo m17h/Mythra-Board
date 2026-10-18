@@ -24,6 +24,7 @@ type Options = {
   toggleMap: () => void;
   pickImage: () => void;
   goHome: () => void;
+  exportPng: () => void;
 };
 
 /** Board-wide keyboard shortcuts and copy/paste. Ignored while you're typing. */
@@ -48,7 +49,7 @@ export function useShortcuts(options: Options) {
 
     const onKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key === "[") {
+      if (mod && !e.shiftKey && e.key === "[") {
         e.preventDefault();
         opts.current.goHome();
         return;
@@ -69,6 +70,9 @@ export function useShortcuts(options: Options) {
         else if (lower === "a") (s.selectAll(), handled());
         else if (lower === "d") (s.duplicateSelection(), handled());
         else if (e.altKey && e.code === "KeyG") (s.frameSelection(), handled());
+        else if (e.shiftKey && e.code === "KeyE") (opts.current.exportPng(), handled());
+        else if (e.shiftKey && e.code === "BracketRight") (s.reorder(selected.map((n) => n.id), "front"), handled());
+        else if (e.shiftKey && e.code === "BracketLeft") (s.reorder(selected.map((n) => n.id), "back"), handled());
         else if (key === "=" || key === "+") (void rf.zoomIn({ duration: 150 }), handled());
         else if (key === "-") (void rf.zoomOut({ duration: 150 }), handled());
         else if (key === "0") (void rf.zoomTo(1, { duration: 200 }), handled());
@@ -77,6 +81,10 @@ export function useShortcuts(options: Options) {
       if (e.altKey) return;
 
       if (e.shiftKey && e.code === "Digit1") return void (rf.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }), handled());
+      if (e.shiftKey && e.code === "Digit2") {
+        if (selected.length) void rf.fitView({ nodes: selected.map((n) => ({ id: n.id })), padding: 0.3, maxZoom: 1.5, duration: 250 });
+        return handled();
+      }
       if (e.shiftKey && e.code === "Digit0") return void (rf.zoomTo(1, { duration: 200 }), handled());
 
       switch (key) {

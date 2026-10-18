@@ -10,7 +10,10 @@ Built with [Tauri 2](https://tauri.app), React and [React Flow](https://reactflo
 - **Hover an item** to see four dots. **Drag a dot** onto another item to link them, or drop it on empty space to start a new linked note. **Click a dot** to add a linked note on that side. Links that share a side spread out so they never overlap.
 - **Tab** adds a linked note to the right (Shift-Tab: left), even while typing.
 - The **dock** at the bottom has: Note (N), Text (T), Shape (S: box, circle, diamond), Section (F), Pen (P), Eraser (E) and Image (I).
-- **Sections** group things: drag one by its title and everything inside moves with it. Select items and press ⌥⌘G to wrap them in a section.
+- **Sections** group things: click anywhere in one to select it, drag it and everything inside moves along, double-click inside to add a note. Hold ⇧ and drag inside a section to box-select its contents. Select items and press ⌥⌘G to wrap them in a section; copying a section copies what's in it.
+- Items **snap** into line with each other while you drag (hold ⌥ to move freely, or turn it off in the board's ⋯ menu).
+- **Right-click** anything for more options, including Bring to front / Send to back.
+- **Export as PNG** (⇧⌘E) saves a picture of the whole board.
 - Notes understand a little Markdown: `# heading`, `- bullet`, `- [ ] to-do` (tick it right on the board), `**bold**`, `*italic*`, and web addresses become clickable.
 - **Paste** text, images or a web address (which becomes a link card). You can also drag image files onto the board.
 - **Click a link** to change its shape, arrows, dashes or label. Press **?** for every shortcut, and **⌘[** to go back to all boards.

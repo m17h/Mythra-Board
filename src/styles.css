@@ -586,9 +586,6 @@ kbd {
 
 /* ---------- Sections (frames) ---------- */
 
-.react-flow .react-flow__node.react-flow__node-frame {
-  pointer-events: none;
-}
 .frame {
   width: 100%;
   height: 100%;
@@ -596,14 +593,23 @@ kbd {
   background: color-mix(in srgb, var(--soft) 55%, transparent);
   border: 1.5px solid color-mix(in srgb, var(--strong) 28%, transparent);
   position: relative;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease;
 }
 .frame.color--plain {
   background: color-mix(in srgb, var(--text) 3.5%, transparent);
   border-color: var(--border);
 }
+.react-flow__node-frame:hover .frame:not(.is-selected) {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
 .frame.is-selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+.frame.is-drop-target {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
 }
 .frame__title {
   position: absolute;
@@ -618,14 +624,15 @@ kbd {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  pointer-events: all;
-  cursor: grab;
 }
 .frame.color--plain .frame__title {
   color: var(--muted);
 }
 .frame__title:hover {
   background: var(--hover);
+}
+.frame.is-selected .frame__title {
+  color: var(--accent);
 }
 .frame.is-editing .frame__title {
   background: var(--surface-solid);
@@ -637,8 +644,15 @@ kbd {
   white-space: nowrap;
   color: var(--text);
 }
-.frame .react-flow__resize-control {
-  pointer-events: all;
+
+/* Alignment guides while dragging */
+.guide {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  background: #f0447a;
+  z-index: 1000;
 }
 
 /* ---------- Pen strokes ---------- */
@@ -1580,4 +1594,91 @@ kbd {
 .menu,
 .toast {
   background: var(--surface-solid);
+}
+
+/* Right-click menu */
+.context-menu {
+  position: fixed;
+  min-width: 220px;
+  z-index: 41;
+}
+.menu__item > span:first-child {
+  flex: 1;
+}
+.menu__keys {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+.menu__item.is-danger .menu__keys {
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* On/off switch inside menus */
+.menu__toggle {
+  position: relative;
+}
+.menu__toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.switch {
+  flex: none;
+  width: 30px;
+  height: 18px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text) 18%, transparent);
+  position: relative;
+  transition: background-color 0.15s ease;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+.menu__toggle input:checked + .switch {
+  background: var(--accent);
+}
+.menu__toggle input:checked + .switch::after {
+  transform: translateX(12px);
+}
+.menu__toggle input:focus-visible + .switch {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Toolbars inherit their item's layer; sections sit at the bottom, so lift every toolbar above the board. */
+.react-flow__node-toolbar {
+  z-index: 1000 !important;
+}
+
+/* Flat look while exporting an image */
+.is-exporting * {
+  transition: none !important;
+  animation: none !important;
+}
+.is-exporting .note,
+.is-exporting .image,
+.is-exporting .link-label {
+  box-shadow: none !important;
+}
+.is-exporting .note {
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+/* With Shift held, sections let drags through so a selection box can start inside them. */
+.shift-held .react-flow__node-frame,
+.shift-held .react-flow__node-frame * {
+  pointer-events: none !important;
 }

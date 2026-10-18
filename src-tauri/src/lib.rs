@@ -3,6 +3,7 @@ mod storage;
 use storage::Storage;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 type Store<'a> = tauri::State<'a, Storage>;
 
@@ -56,6 +57,33 @@ fn save_asset(store: Store, request: Request) -> Result<(), String> {
     store.save_asset(name, bytes).map_err(err)
 }
 
+/// Ask where to save an exported image, then write it there. The location always comes
+/// from the user's choice in the save dialog, never from the page.
+#[tauri::command]
+async fn export_png(app: tauri::AppHandle, request: Request<'_>) -> Result<bool, String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected image bytes".into());
+    };
+    let name = request
+        .headers()
+        .get("file-name")
+        .and_then(|v| v.to_str().ok())
+        .filter(|n| n.ends_with(".png") && !n.contains(['/', '\\']))
+        .unwrap_or("Board.png");
+    let Some(path) = app
+        .dialog()
+        .file()
+        .set_file_name(name)
+        .add_filter("PNG image", &["png"])
+        .blocking_save_file()
+    else {
+        return Ok(false);
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(path, bytes).map_err(err)?;
+    Ok(true)
+}
+
 #[tauri::command]
 fn load_asset(store: Store, name: String) -> Result<Response, String> {
     store.load_asset(&name).map(Response::new).map_err(err)
@@ -65,6 +93,7 @@ fn load_asset(store: Store, name: String) -> Result<Response, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let root = app.path().app_data_dir()?;
             app.manage(Storage::new(&root));
@@ -77,7 +106,8 @@ pub fn run() {
             trash_board,
             restore_board,
             save_asset,
-            load_asset
+            load_asset,
+            export_png
         ])
         .run(tauri::generate_context!())
         .expect("error while running Mythra Board");
