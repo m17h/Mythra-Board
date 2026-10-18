@@ -1,0 +1,137 @@
+import type { Point } from "./geometry";
+import { makeItem, makeLink } from "./store";
+import type { BoardBackground, BoardNode, ItemData, ItemType, LinkData, LinkEdge } from "./types";
+
+export type Template = {
+  id: string;
+  name: string;
+  description: string;
+  background: BoardBackground;
+  build: () => { nodes: BoardNode[]; edges: LinkEdge[] };
+};
+
+/** Small helper for laying out template content. */
+function board() {
+  const nodes: BoardNode[] = [];
+  const edges: LinkEdge[] = [];
+  const add = (type: ItemType, at: Point, data: Partial<ItemData>, size?: { width?: number; height?: number }) => {
+    const n = makeItem(type, at, data, size);
+    if (type === "frame") nodes.unshift(n);
+    else nodes.push(n);
+    return n.id;
+  };
+  const link = (a: string, b: string, data?: Partial<LinkData>) => edges.push(makeLink(a, b, data));
+  return { nodes, edges, add, link };
+}
+
+export const TEMPLATES: Template[] = [
+  {
+    id: "blank",
+    name: "Blank board",
+    description: "Start from nothing",
+    background: "dots",
+    build: () => ({ nodes: [], edges: [] }),
+  },
+  {
+    id: "mindmap",
+    name: "Mind map",
+    description: "One big idea, branching out",
+    background: "dots",
+    build: () => {
+      const b = board();
+      const center = b.add("note", { x: 0, y: 0 }, { text: "Central idea", color: "purple", size: "l" }, { width: 240, height: 64 });
+      const style = { arrow: "none" as const };
+      const branches: [string, Point, ItemData["color"]][] = [
+        ["Branch one", { x: 360, y: -110 }, "blue"],
+        ["Branch two", { x: 360, y: 90 }, "green"],
+        ["Branch three", { x: -340, y: -110 }, "orange"],
+        ["Branch four", { x: -340, y: 90 }, "pink"],
+      ];
+      const ids = branches.map(([text, at, color]) => {
+        const id = b.add("note", at, { text, color });
+        b.link(center, id, style);
+        return id;
+      });
+      for (const [i, text] of ["A detail", "Another detail"].entries()) {
+        b.link(ids[0], b.add("note", { x: 680, y: -170 + i * 90 }, { text, color: "blue", size: "s" }, { width: 180 }), style);
+      }
+      return b;
+    },
+  },
+  {
+    id: "brainstorm",
+    name: "Brainstorm",
+    description: "Dump ideas, then pick favourites",
+    background: "dots",
+    build: () => {
+      const b = board();
+      b.add("text", { x: 0, y: -110 }, { text: "What are we trying to solve?", size: "l" }, { width: 640 });
+      b.add("frame", { x: 0, y: 0 }, { text: "Ideas", color: "yellow" }, { width: 760, height: 400 });
+      b.add("frame", { x: 800, y: 0 }, { text: "Favourites", color: "green" }, { width: 400, height: 400 });
+      const ideas = ["A wild idea", "A quick win", "What if…?", "Ask someone who knows", "Combine two ideas", "Flip it around"];
+      ideas.forEach((text, i) =>
+        b.add("note", { x: 40 + (i % 3) * 240, y: 60 + Math.floor(i / 3) * 150 }, { text, color: "yellow" }),
+      );
+      return b;
+    },
+  },
+  {
+    id: "flowchart",
+    name: "Flowchart",
+    description: "Steps, decisions and outcomes",
+    background: "grid",
+    build: () => {
+      const b = board();
+      const flow = { curve: "elbow" as const };
+      const start = b.add("shape", { x: 10, y: 0 }, { text: "Start", shape: "ellipse", color: "green" }, { width: 160, height: 70 });
+      const step = b.add("shape", { x: 0, y: 150 }, { text: "Do something", shape: "rect", color: "blue" }, { width: 180, height: 80 });
+      const check = b.add("shape", { x: -5, y: 310 }, { text: "Did it work?", shape: "diamond", color: "yellow" }, { width: 190, height: 130 });
+      const yes = b.add("shape", { x: 320, y: 335 }, { text: "Celebrate", shape: "rect", color: "green" }, { width: 180, height: 80 });
+      const no = b.add("shape", { x: 0, y: 520 }, { text: "Try another way", shape: "rect", color: "pink" }, { width: 180, height: 80 });
+      b.link(start, step, flow);
+      b.link(step, check, flow);
+      b.link(check, yes, { ...flow, label: "Yes" });
+      b.link(check, no, { ...flow, label: "No" });
+      return b;
+    },
+  },
+  {
+    id: "kanban",
+    name: "Project plan",
+    description: "To do, doing, done",
+    background: "dots",
+    build: () => {
+      const b = board();
+      b.add("text", { x: 0, y: -100 }, { text: "Project plan", size: "l" }, { width: 400 });
+      const columns: [string, ItemData["color"], string[]][] = [
+        ["To do", "blue", ["# Research\n- [ ] Look at examples\n- [ ] Write down questions", "Plan the first version"]],
+        ["Doing", "yellow", ["# Design\n- [x] Sketch ideas\n- [ ] Pick one"]],
+        ["Done", "green", ["- [x] Kick-off chat"]],
+      ];
+      columns.forEach(([title, color, notes], c) => {
+        b.add("frame", { x: c * 340, y: 0 }, { text: title, color }, { width: 300, height: 520 });
+        notes.forEach((text, i) => b.add("note", { x: c * 340 + 40, y: 60 + i * 170 }, { text, color }));
+      });
+      return b;
+    },
+  },
+  {
+    id: "proscons",
+    name: "Pros & cons",
+    description: "Weigh up a decision",
+    background: "plain",
+    build: () => {
+      const b = board();
+      b.add("text", { x: 0, y: -100 }, { text: "Should we…?", size: "l" }, { width: 500 });
+      b.add("frame", { x: 0, y: 0 }, { text: "Pros", color: "green" }, { width: 420, height: 420 });
+      b.add("frame", { x: 460, y: 0 }, { text: "Cons", color: "pink" }, { width: 420, height: 420 });
+      ["It would be great because…", "Another upside"].forEach((text, i) =>
+        b.add("note", { x: 40, y: 60 + i * 120 }, { text, color: "green" }, { width: 340 }),
+      );
+      ["The risk is…", "Another downside"].forEach((text, i) =>
+        b.add("note", { x: 500, y: 60 + i * 120 }, { text, color: "pink" }, { width: 340 }),
+      );
+      return b;
+    },
+  },
+];

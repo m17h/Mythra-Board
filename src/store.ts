@@ -1,0 +1,645 @@
+import {
+  applyEdgeChanges,
+  applyNodeChanges,
+  Position,
+  type EdgeChange,
+  type NodeChange,
+  type Viewport,
+} from "@xyflow/react";
+import { nanoid } from "nanoid";
+import { createStore, useStore } from "zustand";
+import { rectsBounds, type Point } from "./geometry";
+import { decorate, defaultSize, freeSpot, itemsInFrame, rectOf } from "./layout";
+import {
+  AUTO_HEIGHT,
+  LINKABLE,
+  type BoardBackground,
+  type BoardNode,
+  type Color,
+  type ItemData,
+  type ItemType,
+  type LinkData,
+  type LinkEdge,
+  type LinkStyle,
+  type ShapeKind,
+  type Size,
+} from "./types";
+
+export type Tool = "select" | "hand" | "note" | "text" | "shape" | "frame" | "pen" | "eraser";
+
+export type Clip = { nodes: BoardNode[]; links: LinkEdge[] };
+
+/** Everything that is saved for a board. */
+export type BoardDoc = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+  background: BoardBackground;
+  viewport: Viewport | null;
+  nodes: BoardNode[];
+  edges: LinkEdge[];
+};
+
+const HISTORY_LIMIT = 200;
+const PASTE_OFFSET = 32;
+const FRAME_PADDING = 36;
+
+export type BoardState = {
+  boardId: string;
+  title: string;
+  createdAt: number;
+  pinned: boolean;
+  background: BoardBackground;
+  nodes: BoardNode[];
+  edges: LinkEdge[];
+  viewport: Viewport | null;
+
+  tool: Tool;
+  shapeKind: ShapeKind;
+  penColor: Color;
+  penSize: Size;
+  editingId: string | null;
+  editingLabelId: string | null;
+  connecting: boolean;
+  linkStyle: LinkStyle;
+  past: string[];
+  future: string[];
+
+  onNodesChange: (changes: NodeChange<BoardNode>[]) => void;
+  onEdgesChange: (changes: EdgeChange<LinkEdge>[]) => void;
+
+  begin: () => void;
+  commit: () => void;
+  undo: () => void;
+  redo: () => void;
+  beginDrag: (ids: string[]) => void;
+  endDrag: () => void;
+
+  load: (doc: BoardDoc) => void;
+  setTitle: (title: string) => void;
+  setBackground: (background: BoardBackground) => void;
+  setTool: (tool: Tool) => void;
+  setShapeKind: (shape: ShapeKind) => void;
+  setPen: (opts: { color?: Color; size?: Size }) => void;
+  setViewport: (viewport: Viewport) => void;
+  setConnecting: (connecting: boolean) => void;
+
+  addItem: (
+    type: ItemType,
+    position: Point,
+    opts?: { edit?: boolean; data?: Partial<ItemData>; width?: number; height?: number; select?: boolean },
+  ) => string;
+  addNote: (position: Point, opts?: { edit?: boolean; data?: Partial<ItemData>; width?: number }) => string;
+  addInk: (points: number[], color: Color, size: Size) => string | null;
+  addLinkedNote: (fromId: string, side: Position) => string | null;
+  addConnectedNote: (fromId: string, position: Point) => string | null;
+  setText: (id: string, text: string) => void;
+  setColor: (ids: string[], color: Color) => void;
+  setSize: (ids: string[], size: Size) => void;
+  setShape: (ids: string[], shape: ShapeKind) => void;
+  toggleTask: (id: string, line: number) => void;
+  frameSelection: () => string | null;
+  startEditing: (id: string) => void;
+  stopEditing: () => void;
+
+  canConnect: (source: string, target: string) => boolean;
+  connect: (source: string, target: string) => string | null;
+  updateLink: (id: string, patch: Partial<LinkData>) => void;
+  reverseLink: (id: string) => void;
+  startEditingLabel: (id: string | null) => void;
+
+  selectOnly: (ids: string[], edgeIds?: string[]) => void;
+  selectAll: () => void;
+  clearSelection: () => void;
+  deleteSelection: () => void;
+  deleteNodes: (ids: string[]) => void;
+  /** Remove items without recording a step; wrap in begin/commit (used by the eraser). */
+  eraseNodes: (ids: string[]) => void;
+  nudgeSelection: (dx: number, dy: number) => void;
+  copySelection: () => Clip | null;
+  paste: (clip: Clip, at?: Point) => void;
+  duplicateSelection: () => void;
+};
+
+const round = (v: number) => Math.round(v * 10) / 10;
+
+function cleanData(d: ItemData): ItemData {
+  const out: ItemData = { text: d.text ?? "", color: d.color ?? "plain", size: d.size ?? "m" };
+  if (d.shape) out.shape = d.shape;
+  if (d.asset) out.asset = d.asset;
+  if (d.points) out.points = d.points;
+  if (d.url) out.url = d.url;
+  return out;
+}
+
+/** Only the parts of an item that belong in history and on disk. */
+export function cleanNode(n: BoardNode): BoardNode {
+  const out: BoardNode = {
+    id: n.id,
+    type: n.type,
+    position: { x: round(n.position.x), y: round(n.position.y) },
+    width: n.width ?? n.measured?.width ?? defaultSize(n.type).width,
+    data: cleanData(n.data),
+  };
+  if (!AUTO_HEIGHT.has(n.type)) out.height = n.height ?? n.measured?.height ?? defaultSize(n.type, n.data.shape).height;
+  return out;
+}
+
+export function cleanEdge(e: LinkEdge): LinkEdge {
+  const d = e.data ?? defaultLinkData();
+  return {
+    id: e.id,
+    type: "link",
+    source: e.source,
+    target: e.target,
+    data: { label: d.label, curve: d.curve, arrow: d.arrow, dash: d.dash },
+  };
+}
+
+const serialize = (nodes: BoardNode[], edges: LinkEdge[]) =>
+  JSON.stringify({ n: nodes.map(cleanNode), e: edges.map(cleanEdge) });
+
+export const defaultLinkData = (style?: LinkStyle): LinkData => ({
+  label: "",
+  curve: style?.curve ?? "curved",
+  arrow: style?.arrow ?? "end",
+  dash: style?.dash ?? "solid",
+});
+
+export function makeItem(
+  type: ItemType,
+  position: Point,
+  data?: Partial<ItemData>,
+  size?: { width?: number; height?: number },
+): BoardNode {
+  const base = defaultSize(type, data?.shape);
+  const node: BoardNode = {
+    id: nanoid(10),
+    type,
+    position,
+    width: size?.width ?? base.width,
+    data: { text: "", color: "plain", size: "m", ...data },
+  };
+  if (AUTO_HEIGHT.has(type)) node.initialHeight = size?.height ?? base.height;
+  else node.height = size?.height ?? base.height;
+  return decorate(node);
+}
+
+export const makeLink = (source: string, target: string, data?: Partial<LinkData>): LinkEdge => ({
+  id: nanoid(10),
+  type: "link",
+  source,
+  target,
+  data: { ...defaultLinkData(), ...data },
+});
+
+/** Frames go first so they draw underneath everything else. */
+const withFramesFirst = (nodes: BoardNode[]) => {
+  const frames = nodes.filter((n) => n.type === "frame");
+  return frames.length ? [...frames, ...nodes.filter((n) => n.type !== "frame")] : nodes;
+};
+
+const deselected = <T extends { selected?: boolean }>(items: T[]) =>
+  items.map((x) => (x.selected ? { ...x, selected: false } : x));
+
+export function createBoardStore() {
+  // A history entry pushed by `begin`/`commit`, waiting to see whether anything changed.
+  let pending: string | null = null;
+  // An item created for immediate typing; abandoned if it is left empty.
+  let fresh: { id: string; historyLength: number } | null = null;
+  // Items riding along with frames that are being dragged.
+  let dragChildren = new Map<string, string[]>();
+
+  return createStore<BoardState>()((set, get) => {
+    const snapshot = () => serialize(get().nodes, get().edges);
+
+    const pushHistory = (entry: string) => {
+      const past = [...get().past, entry];
+      if (past.length > HISTORY_LIMIT) past.shift();
+      set({ past, future: [] });
+    };
+
+    /** Run a change as one undoable step. */
+    const record = (change: () => void) => {
+      if (pending !== null) get().commit();
+      const before = snapshot();
+      change();
+      if (snapshot() !== before) pushHistory(before);
+    };
+
+    const restore = (entry: string) => {
+      const { n, e } = JSON.parse(entry) as { n: BoardNode[]; e: LinkEdge[] };
+      // Reuse known sizes so restored items don't blink while they are re-measured.
+      const sizes = new Map(get().nodes.map((x) => [x.id, x.measured]));
+      const nodes = n.map((x) => decorate({ ...x, measured: sizes.get(x.id) }));
+      set({ nodes, edges: e, editingId: null, editingLabelId: null });
+    };
+
+    const linkExists = (a: string, b: string) =>
+      get().edges.some((e) => (e.source === a && e.target === b) || (e.source === b && e.target === a));
+
+    const updateData = (ids: string[], patch: (n: BoardNode) => Partial<ItemData> | null) => {
+      const idSet = new Set(ids);
+      record(() =>
+        set((s) => ({
+          nodes: s.nodes.map((n) => {
+            if (!idSet.has(n.id)) return n;
+            const p = patch(n);
+            return p ? { ...n, data: { ...n.data, ...p } } : n;
+          }),
+        })),
+      );
+    };
+
+    return {
+      boardId: "",
+      title: "Untitled board",
+      createdAt: 0,
+      pinned: false,
+      background: "dots",
+      nodes: [],
+      edges: [],
+      viewport: null,
+      tool: "select",
+      shapeKind: "rect",
+      penColor: "plain",
+      penSize: "m",
+      editingId: null,
+      editingLabelId: null,
+      connecting: false,
+      linkStyle: { curve: "curved", arrow: "end", dash: "solid" },
+      past: [],
+      future: [],
+
+      onNodesChange: (changes) => {
+        const removed = new Set(changes.filter((c) => c.type === "remove").map((c) => c.id));
+        const extra: NodeChange<BoardNode>[] = [];
+        if (dragChildren.size) {
+          const byId = new Map(get().nodes.map((n) => [n.id, n]));
+          const moving = new Set(changes.filter((c) => c.type === "position").map((c) => c.id));
+          for (const c of changes) {
+            if (c.type !== "position" || !c.position) continue;
+            const kids = dragChildren.get(c.id);
+            const frame = byId.get(c.id);
+            if (!kids || !frame) continue;
+            const dx = c.position.x - frame.position.x;
+            const dy = c.position.y - frame.position.y;
+            if (!dx && !dy) continue;
+            for (const k of kids) {
+              const n = byId.get(k);
+              if (!n || moving.has(k)) continue;
+              moving.add(k);
+              extra.push({ type: "position", id: k, position: { x: n.position.x + dx, y: n.position.y + dy } });
+            }
+          }
+        }
+        set((s) => ({
+          nodes: applyNodeChanges(extra.length ? [...changes, ...extra] : changes, s.nodes),
+          edges: removed.size ? s.edges.filter((e) => !removed.has(e.source) && !removed.has(e.target)) : s.edges,
+        }));
+      },
+      onEdgesChange: (changes) => set((s) => ({ edges: applyEdgeChanges(changes, s.edges) })),
+
+      begin: () => {
+        if (pending !== null) get().commit();
+        pending = snapshot();
+      },
+      commit: () => {
+        const before = pending;
+        pending = null;
+        if (before !== null && before !== snapshot()) pushHistory(before);
+      },
+      undo: () => {
+        get().stopEditing();
+        const { past, future } = get();
+        if (!past.length) return;
+        const current = snapshot();
+        const entry = past[past.length - 1];
+        set({ past: past.slice(0, -1), future: [...future, current] });
+        restore(entry);
+      },
+      redo: () => {
+        get().stopEditing();
+        const { past, future } = get();
+        if (!future.length) return;
+        const current = snapshot();
+        const entry = future[future.length - 1];
+        set({ future: future.slice(0, -1), past: [...past, current] });
+        restore(entry);
+      },
+
+      beginDrag: (ids) => {
+        get().begin();
+        const dragged = new Set(ids);
+        const nodes = get().nodes;
+        dragChildren = new Map();
+        for (const n of nodes) {
+          if (n.type !== "frame" || !dragged.has(n.id)) continue;
+          dragChildren.set(n.id, itemsInFrame(n, nodes).filter((id) => !dragged.has(id)));
+        }
+      },
+      endDrag: () => {
+        dragChildren = new Map();
+        get().commit();
+      },
+
+      load: (doc) => {
+        pending = null;
+        fresh = null;
+        set({
+          boardId: doc.id,
+          title: doc.title,
+          createdAt: doc.createdAt,
+          pinned: doc.pinned,
+          background: doc.background,
+          viewport: doc.viewport,
+          nodes: withFramesFirst(doc.nodes.map(decorate)),
+          edges: doc.edges,
+          past: [],
+          future: [],
+          tool: "select",
+          editingId: null,
+          editingLabelId: null,
+          connecting: false,
+        });
+      },
+      setTitle: (title) => set({ title }),
+      setBackground: (background) => set({ background }),
+      setTool: (tool) => {
+        get().stopEditing();
+        set({ tool });
+      },
+      setShapeKind: (shapeKind) => set({ shapeKind, tool: "shape" }),
+      setPen: ({ color, size }) =>
+        set((s) => ({ penColor: color ?? s.penColor, penSize: size ?? s.penSize, tool: "pen" })),
+      setViewport: (viewport) => set({ viewport }),
+      setConnecting: (connecting) => set({ connecting }),
+
+      addItem: (type, position, opts) => {
+        get().stopEditing();
+        const item = makeItem(type, position, opts?.data, { width: opts?.width, height: opts?.height });
+        const select = opts?.select ?? true;
+        record(() =>
+          set((s) => {
+            const nodes = select ? deselected(s.nodes) : s.nodes;
+            const added = { ...item, selected: select };
+            return {
+              nodes: type === "frame" ? [added, ...nodes] : [...nodes, added],
+              edges: select ? deselected(s.edges) : s.edges,
+            };
+          }),
+        );
+        if (opts?.edit) {
+          if (type === "note" || type === "text") fresh = { id: item.id, historyLength: get().past.length };
+          get().startEditing(item.id);
+        }
+        return item.id;
+      },
+
+      addNote: (position, opts) => get().addItem("note", position, opts),
+
+      addInk: (points, color, size) => {
+        if (points.length < 3) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (let i = 0; i < points.length; i += 3) {
+          minX = Math.min(minX, points[i]);
+          maxX = Math.max(maxX, points[i]);
+          minY = Math.min(minY, points[i + 1]);
+          maxY = Math.max(maxY, points[i + 1]);
+        }
+        const pad = 12;
+        const x = minX - pad;
+        const y = minY - pad;
+        const rel = points.map((v, i) => (i % 3 === 0 ? round(v - x) : i % 3 === 1 ? round(v - y) : Math.round(v * 100) / 100));
+        return get().addItem(
+          "ink",
+          { x, y },
+          { data: { points: rel, color, size }, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2, select: false },
+        );
+      },
+
+      addLinkedNote: (fromId, side) => {
+        const from = get().nodes.find((n) => n.id === fromId);
+        if (!from || !LINKABLE.has(from.type)) return null;
+        const others = get().nodes.filter((n) => n.type !== "frame").map(rectOf);
+        return get().addConnectedNote(fromId, freeSpot(rectOf(from), side, others));
+      },
+
+      addConnectedNote: (fromId, position) => {
+        const from = get().nodes.find((n) => n.id === fromId);
+        if (!from) return null;
+        get().stopEditing();
+        const color = from.type === "note" || from.type === "shape" ? from.data.color : "plain";
+        const note = makeItem("note", position, { color, size: from.data.size === "l" ? "m" : from.data.size });
+        const link = makeLink(fromId, note.id, get().linkStyle);
+        record(() =>
+          set((s) => ({
+            nodes: [...deselected(s.nodes), { ...note, selected: true }],
+            edges: [...deselected(s.edges), link],
+          })),
+        );
+        fresh = { id: note.id, historyLength: get().past.length };
+        get().startEditing(note.id);
+        return note.id;
+      },
+
+      setText: (id, text) =>
+        set((s) => ({ nodes: s.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, text } } : n)) })),
+      setColor: (ids, color) => updateData(ids, () => ({ color })),
+      setSize: (ids, size) => updateData(ids, () => ({ size })),
+      setShape: (ids, shape) => updateData(ids, (n) => (n.type === "shape" ? { shape } : null)),
+
+      toggleTask: (id, line) =>
+        updateData([id], (n) => {
+          const lines = n.data.text.split("\n");
+          const m = /^(\s*[-*] \[)( |x|X)(\])/.exec(lines[line] ?? "");
+          if (!m) return null;
+          lines[line] = m[1] + (m[2] === " " ? "x" : " ") + lines[line].slice(m[1].length + 1);
+          return { text: lines.join("\n") };
+        }),
+
+      frameSelection: () => {
+        const selected = get().nodes.filter((n) => n.selected);
+        const bounds = rectsBounds(selected.map(rectOf));
+        if (!bounds) return null;
+        const id = get().addItem(
+          "frame",
+          { x: bounds.x - FRAME_PADDING, y: bounds.y - FRAME_PADDING },
+          { width: bounds.width + FRAME_PADDING * 2, height: bounds.height + FRAME_PADDING * 2, data: { text: "Section" } },
+        );
+        get().startEditing(id);
+        return id;
+      },
+
+      startEditing: (id) => {
+        if (get().editingId === id) return;
+        get().stopEditing();
+        if (!get().nodes.some((n) => n.id === id)) return;
+        get().begin();
+        set({ editingId: id, editingLabelId: null });
+      },
+
+      stopEditing: () => {
+        const id = get().editingId;
+        if (!id) return;
+        set({ editingId: null });
+        const item = get().nodes.find((n) => n.id === id);
+        const wasFresh = fresh?.id === id ? fresh : null;
+        fresh = null;
+        if (item && wasFresh && !item.data.text.trim()) {
+          // Nothing was typed into a brand-new note: remove it as if it never existed.
+          pending = null;
+          set((s) => ({
+            nodes: s.nodes.filter((n) => n.id !== id),
+            edges: s.edges.filter((e) => e.source !== id && e.target !== id),
+          }));
+          if (get().past.length === wasFresh.historyLength) set((s) => ({ past: s.past.slice(0, -1) }));
+          return;
+        }
+        get().commit();
+      },
+
+      canConnect: (source, target) => {
+        if (!source || !target || source === target) return false;
+        const types = new Map(get().nodes.map((n) => [n.id, n.type]));
+        const a = types.get(source);
+        const b = types.get(target);
+        return !!a && !!b && LINKABLE.has(a) && LINKABLE.has(b) && !linkExists(source, target);
+      },
+
+      connect: (source, target) => {
+        if (!get().canConnect(source, target)) return null;
+        const link = makeLink(source, target, get().linkStyle);
+        record(() => set((s) => ({ edges: [...s.edges, link] })));
+        return link.id;
+      },
+
+      updateLink: (id, patch) => {
+        record(() =>
+          set((s) => ({
+            edges: s.edges.map((e) => (e.id === id ? { ...e, data: { ...defaultLinkData(), ...e.data, ...patch } } : e)),
+          })),
+        );
+        // New links copy the look of the last link you styled.
+        const { label: _label, ...style } = patch;
+        if (Object.keys(style).length) set((s) => ({ linkStyle: { ...s.linkStyle, ...style } }));
+      },
+
+      reverseLink: (id) =>
+        record(() =>
+          set((s) => ({
+            edges: s.edges.map((e) => (e.id === id ? { ...e, source: e.target, target: e.source } : e)),
+          })),
+        ),
+
+      startEditingLabel: (id) => {
+        get().stopEditing();
+        set({ editingLabelId: id });
+      },
+
+      selectOnly: (ids, edgeIds = []) => {
+        const n = new Set(ids);
+        const e = new Set(edgeIds);
+        set((s) => ({
+          nodes: s.nodes.map((x) => (!!x.selected === n.has(x.id) ? x : { ...x, selected: n.has(x.id) })),
+          edges: s.edges.map((x) => (!!x.selected === e.has(x.id) ? x : { ...x, selected: e.has(x.id) })),
+        }));
+      },
+      selectAll: () => get().selectOnly(get().nodes.map((n) => n.id)),
+      clearSelection: () => get().selectOnly([]),
+
+      deleteSelection: () => {
+        const { nodes, edges } = get();
+        const ids = nodes.filter((n) => n.selected).map((n) => n.id);
+        const edgeIds = new Set(edges.filter((e) => e.selected).map((e) => e.id));
+        if (!ids.length && !edgeIds.size) return;
+        const idSet = new Set(ids);
+        get().stopEditing();
+        record(() =>
+          set((s) => ({
+            nodes: s.nodes.filter((n) => !idSet.has(n.id)),
+            edges: s.edges.filter((e) => !edgeIds.has(e.id) && !idSet.has(e.source) && !idSet.has(e.target)),
+          })),
+        );
+      },
+
+      deleteNodes: (ids) => {
+        if (!ids.length) return;
+        const idSet = new Set(ids);
+        get().stopEditing();
+        record(() =>
+          set((s) => ({
+            nodes: s.nodes.filter((n) => !idSet.has(n.id)),
+            edges: s.edges.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)),
+          })),
+        );
+      },
+
+      eraseNodes: (ids) => {
+        const idSet = new Set(ids);
+        set((s) => ({
+          nodes: s.nodes.filter((n) => !idSet.has(n.id)),
+          edges: s.edges.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)),
+        }));
+      },
+
+      nudgeSelection: (dx, dy) => {
+        if (!get().nodes.some((n) => n.selected)) return;
+        record(() =>
+          set((s) => ({
+            nodes: s.nodes.map((n) =>
+              n.selected ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n,
+            ),
+          })),
+        );
+      },
+
+      copySelection: () => {
+        const nodes = get().nodes.filter((n) => n.selected).map(cleanNode);
+        if (!nodes.length) return null;
+        const ids = new Set(nodes.map((n) => n.id));
+        const links = get()
+          .edges.filter((e) => ids.has(e.source) && ids.has(e.target))
+          .map(cleanEdge);
+        return { nodes, links };
+      },
+
+      paste: (clip, at) => {
+        if (!clip.nodes.length) return;
+        get().stopEditing();
+        const minX = Math.min(...clip.nodes.map((n) => n.position.x));
+        const minY = Math.min(...clip.nodes.map((n) => n.position.y));
+        const dx = at ? at.x - minX : PASTE_OFFSET;
+        const dy = at ? at.y - minY : PASTE_OFFSET;
+        const idMap = new Map<string, string>();
+        const nodes = clip.nodes.map((n) => {
+          const id = nanoid(10);
+          idMap.set(n.id, id);
+          return decorate({ ...cleanNode(n), id, selected: true, position: { x: n.position.x + dx, y: n.position.y + dy } });
+        });
+        const links = clip.links
+          .filter((e) => idMap.has(e.source) && idMap.has(e.target))
+          .map((e) => ({ ...cleanEdge(e), id: nanoid(10), source: idMap.get(e.source)!, target: idMap.get(e.target)! }));
+        record(() =>
+          set((s) => ({
+            nodes: withFramesFirst([...deselected(s.nodes), ...nodes]),
+            edges: [...deselected(s.edges), ...links],
+          })),
+        );
+      },
+
+      duplicateSelection: () => {
+        const clip = get().copySelection();
+        if (clip) get().paste(clip);
+      },
+    };
+  });
+}
+
+export const boardStore = createBoardStore();
+
+export function useBoard<T>(selector: (s: BoardState) => T): T {
+  return useStore(boardStore, selector);
+}
