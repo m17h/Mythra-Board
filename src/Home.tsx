@@ -5,11 +5,22 @@ import { markKeyHandled, onMenu } from "./menuEvents";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { isMac, keyLabel } from "./platform";
 import Thumbnail from "./components/Thumbnail";
-import { createBoard, makeBoardDoc, refreshBoardIndex, updateIndexedBoard } from "./navigation";
+import {
+  boardIndex,
+  createBoard,
+  makeBoardDoc,
+  openBoardAt,
+  refreshBoardIndex,
+  renameLinks,
+  tagsIn,
+  updateIndexedBoard,
+} from "./navigation";
 import { exportBoardFile, importBoardFile } from "./boardFile";
+import { deleteTemplate, listTemplates, saveTemplate } from "./persistence";
 import { isTauri, newBoardId, pickBoardFile, restoreBoard, trashBoard, writeBoard } from "./persistence";
 import type { BoardDoc } from "./store";
-import { TEMPLATES, welcomeBoard, type Template } from "./templates";
+import { customTemplate, saveAsTemplate, TEMPLATES, welcomeBoard, type Template } from "./templates";
+import { TrashDialog } from "./components/TrashDialog";
 
 const WELCOMED_KEY = "mythra-board:welcomed";
 
@@ -48,6 +59,40 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [mine, setMine] = useState<Template[]>([]);
+  const loadMine = () => listTemplates().then((t) => setMine(t.map(customTemplate)), () => setMine([]));
+  useEffect(() => {
+    void loadMine();
+  }, []);
+
+  const makeTemplate = async (doc: BoardDoc) => {
+    try {
+      await saveAsTemplate(doc);
+      await loadMine();
+      setToast({ message: `Saved “${doc.title}” as a template` });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Couldn't save the template" });
+    }
+  };
+
+  const removeTemplate = async (t: Template) => {
+    if (!t.customId) return;
+    const kept = (await listTemplates()).find((d) => d.id === t.customId);
+    await deleteTemplate(t.customId);
+    await loadMine();
+    setToast({
+      message: `Removed the “${t.name}” template`,
+      undo: kept
+        ? async () => {
+            await saveTemplate(kept);
+            await loadMine();
+            setToast(null);
+          }
+        : undefined,
+    });
+  };
   useEffect(
     () =>
       onMenu((id) => {
@@ -89,7 +134,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
 
   const create = async (t: Template) => {
     const { nodes, edges } = t.build();
-    const doc = makeBoardDoc(t.id === "blank" ? "Untitled board" : t.name, { nodes, edges, background: t.background });
+    const doc = makeBoardDoc(t.id === "blank" ? "Untitled board" : t.name, { nodes, edges, background: t.background, style: t.style });
     try {
       await createBoard(doc);
       onOpen(doc);
@@ -149,6 +194,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
     try {
       await writeBoard(next);
       updateIndexedBoard(next);
+      if (patch.title !== undefined && (await renameLinks(doc.title, patch.title, doc.id))) setBoards(boardIndex());
     } catch (err) {
       console.error(err);
       replace(doc);
@@ -210,6 +256,32 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
     return sorted;
   }, [boards, query, sort]);
 
+  // Individual notes that match the search, so you can jump straight to them.
+  const noteHits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!boards || q.length < 2) return [];
+    const hits: { board: BoardDoc; id: string; title?: string; snippet: string }[] = [];
+    for (const b of boards) {
+      for (const n of b.nodes) {
+        const text = [n.data.title, n.data.text].filter(Boolean).join(" — ");
+        const at = text.toLowerCase().indexOf(q);
+        if (at < 0) continue;
+        const from = Math.max(0, at - 40);
+        const snippet = (from ? "…" : "") + text.slice(from, at + q.length + 70).replace(/\s+/g, " ") + (at + q.length + 70 < text.length ? "…" : "");
+        hits.push({ board: b, id: n.id, title: n.data.title, snippet });
+        if (hits.length >= 40) return hits;
+      }
+    }
+    return hits;
+  }, [boards, query]);
+
+  // Every #tag across all boards, most used first.
+  const tags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of boards ?? []) for (const n of b.nodes) for (const t of tagsIn(`${n.data.title ?? ""} ${n.data.text}`)) counts.set(t, (counts.get(t) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 30);
+  }, [boards]);
+
   const pinned = visible.filter((b) => b.pinned);
   const others = visible.filter((b) => !b.pinned);
   const searching = query.trim().length > 0;
@@ -244,6 +316,10 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
           onExport={() => {
             setMenuId(null);
             void saveCopy(doc);
+          }}
+          onTemplate={() => {
+            setMenuId(null);
+            void makeTemplate(doc);
           }}
         />
       ))}
@@ -298,6 +374,38 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
               {TEMPLATES.map((t) => (
                 <TemplateCard key={t.id} template={t} onPick={() => void create(t)} />
               ))}
+              {mine.map((t) => (
+                <TemplateCard key={t.id} template={t} onPick={() => void create(t)} onRemove={() => void removeTemplate(t)} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {tags.length > 0 && (
+          <div className="tag-row" role="group" aria-label="Tags">
+            {tags.map(([t, n]) => (
+              <button
+                key={t}
+                type="button"
+                className={`tag-chip${query.trim().toLowerCase() === `#${t}` ? " is-active" : ""}`}
+                onClick={() => setQuery(query.trim().toLowerCase() === `#${t}` ? "" : `#${t}`)}
+              >
+                #{t} <span>{n}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {noteHits.length > 0 && (
+          <section>
+            <h2 className="section-title">In your notes</h2>
+            <div className="note-hits">
+              {noteHits.map((h) => (
+                <button key={`${h.board.id}:${h.id}`} type="button" className="note-hit" onClick={() => void openBoardAt(h.board.id, h.id)}>
+                  <span className="note-hit__board">{h.board.title}</span>
+                  <span className="note-hit__text">{h.snippet}</span>
+                </button>
+              ))}
             </div>
           </section>
         )}
@@ -332,8 +440,14 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
             </section>
           </>
         )}
+        <footer className="home__footer">
+          <button type="button" className="link-btn" onClick={() => setTrashOpen(true)}>
+            <TrashIcon /> Recently deleted
+          </button>
+        </footer>
       </div>
 
+      {trashOpen && <TrashDialog onClose={() => setTrashOpen(false)} onRestored={() => setBoards(boardIndex())} />}
       {settingsOpen && (
         <SettingsDialog onClose={() => setSettingsOpen(false)} onChanged={() => void refreshBoardIndex().then(setBoards)} />
       )}
@@ -352,10 +466,22 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   );
 }
 
-function TemplateCard({ template, onPick }: { template: Template; onPick: () => void }) {
+function TemplateCard({ template, onPick, onRemove }: { template: Template; onPick: () => void; onRemove?: () => void }) {
   const preview = useMemo(() => template.build(), [template]);
   return (
-    <button type="button" className="template-card" onClick={onPick}>
+    <div className="template-card-wrap">
+      {onRemove && (
+        <button
+          type="button"
+          className="card-btn template-card__remove"
+          title="Remove this template"
+          aria-label={`Remove the ${template.name} template`}
+          onClick={onRemove}
+        >
+          ×
+        </button>
+      )}
+      <button type="button" className="template-card" onClick={onPick}>
       <div className={`template-card__preview bg--${template.background}`}>
         {template.id === "blank" ? (
           <span className="template-card__plus">
@@ -367,7 +493,8 @@ function TemplateCard({ template, onPick }: { template: Template; onPick: () => 
       </div>
       <div className="template-card__name">{template.name}</div>
       <div className="template-card__desc">{template.description}</div>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -383,6 +510,7 @@ function BoardCard({
   onDuplicate,
   onDelete,
   onExport,
+  onTemplate,
 }: {
   doc: BoardDoc;
   renaming: boolean;
@@ -395,6 +523,7 @@ function BoardCard({
   onDuplicate: () => void;
   onExport: () => void;
   onDelete: () => void;
+  onTemplate: () => void;
 }) {
   return (
     <div className={`board-card${menuOpen ? " is-menu-open" : ""}`}>
@@ -447,6 +576,9 @@ function BoardCard({
               </button>
               <button type="button" role="menuitem" className="menu__item" onClick={onExport}>
                 <FileIcon /> Save as board file…
+              </button>
+              <button type="button" role="menuitem" className="menu__item" onClick={onTemplate}>
+                <DuplicateIcon /> Save as template
               </button>
               <button type="button" role="menuitem" className="menu__item" onClick={onPin}>
                 <StarIcon /> {doc.pinned ? "Unpin" : "Pin to top"}

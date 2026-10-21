@@ -1232,7 +1232,7 @@ kbd {
   position: fixed;
   left: 50%;
   bottom: 24px;
-  transform: translateX(-50%);
+  translate: -50% 0;
   z-index: 40;
   display: flex;
   align-items: center;
@@ -2189,6 +2189,8 @@ kbd {
 .free-arrow {
   display: block;
   overflow: visible;
+  /* Only the line itself (and its end handles) catch clicks, not its whole box. */
+  pointer-events: none;
 }
 .free-arrow__hit {
   stroke: transparent;
@@ -2261,7 +2263,7 @@ kbd {
   position: fixed;
   top: 14vh;
   left: 50%;
-  transform: translateX(-50%);
+  translate: -50% 0;
   z-index: 51;
   width: min(580px, calc(100vw - 40px));
   border-radius: 16px;
@@ -2351,7 +2353,7 @@ kbd {
   position: fixed;
   top: 10px;
   left: 50%;
-  transform: translateX(-50%);
+  translate: -50% 0;
   z-index: 30;
   display: flex;
   align-items: center;
@@ -2469,7 +2471,7 @@ svg.is-locked::before {
   position: fixed;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  translate: -50% -50%;
   z-index: 51;
   width: min(460px, calc(100vw - 40px));
   padding: 20px;
@@ -2974,4 +2976,294 @@ svg.is-locked::before {
   flex-direction: column;
   gap: 6px;
   min-width: 250px;
+}
+
+/* ---------- Formatting bar ---------- */
+
+.format-bar__group {
+  display: flex;
+  align-items: center;
+}
+.format-bar .tool-btn {
+  font-size: 15px;
+  color: var(--text);
+}
+.format-bar .tool-btn b {
+  font-weight: 800;
+}
+.format-bar .tool-btn i {
+  font-family: Georgia, serif;
+  font-size: 16px;
+}
+.fmt-h {
+  font-weight: 800;
+  font-size: 15px;
+}
+.fmt-num {
+  font-weight: 650;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.format-bar__done {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.format-bar__done:hover {
+  filter: brightness(1.08);
+}
+
+/* ---------- Tags and note results ---------- */
+
+.rt-tag {
+  display: inline;
+  padding: 0 5px 1px;
+  margin: 0 1px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--strong, var(--accent)) 14%, transparent);
+  color: color-mix(in srgb, var(--strong, var(--accent)) 85%, var(--text));
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.color--plain .rt-tag {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.rt-tag:hover {
+  filter: brightness(0.95);
+}
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -14px 0 30px;
+}
+.tag-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-solid);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+.tag-chip span {
+  color: var(--muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.tag-chip:hover {
+  border-color: var(--accent);
+}
+.tag-chip.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.note-hits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+}
+.note-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-solid);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.note-hit:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm);
+}
+.note-hit__board {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.note-hit__text {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Lots of boards: skip drawing cards that are off screen. */
+.board-card__preview .thumb {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+}
+
+/* ---------- Picture captions, cropping and file cards ---------- */
+
+.image__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.image__caption-input {
+  text-align: center;
+  color: var(--text);
+}
+.image.is-cropping {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft);
+}
+.image.is-cropping img {
+  pointer-events: auto;
+  cursor: move;
+}
+.filecard__badge {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 42px;
+  border-radius: 6px 12px 6px 6px;
+  background: var(--accent);
+  color: white;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.filecard__badge--pdf { background: #e5484d; }
+.filecard__badge--doc, .filecard__badge--docx, .filecard__badge--pages, .filecard__badge--txt, .filecard__badge--rtf, .filecard__badge--md { background: #3b82f6; }
+.filecard__badge--xls, .filecard__badge--xlsx, .filecard__badge--numbers, .filecard__badge--csv { background: #16a34a; }
+.filecard__badge--ppt, .filecard__badge--pptx, .filecard__badge--key { background: #ea580c; }
+.filecard__badge--mp3, .filecard__badge--m4a, .filecard__badge--wav, .filecard__badge--mp4, .filecard__badge--mov { background: #8b5cf6; }
+.filecard .linkcard__title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Recently deleted and your templates ---------- */
+
+.home__footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+}
+.link-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.link-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.link-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.trash {
+  width: min(620px, calc(100vw - 40px));
+}
+.trash__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+}
+.trash__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.trash__thumb {
+  flex: none;
+  width: 96px;
+  height: 60px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background-color: var(--bg);
+}
+.trash__meta {
+  flex: 1;
+  min-width: 0;
+}
+.trash__title {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trash__sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.trash__forever {
+  color: var(--danger);
+}
+.trash__warn {
+  font-size: 13px;
+  font-weight: 550;
+}
+.template-card-wrap {
+  position: relative;
+}
+.template-card__remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  font-size: 18px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.template-card-wrap:hover .template-card__remove {
+  opacity: 1;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

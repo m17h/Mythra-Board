@@ -19,10 +19,12 @@ import BoardDefs from "./components/BoardDefs";
 import { ExportDialog } from "./components/ExportDialog";
 import { Presentation } from "./components/Presentation";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { onMenu, typingNow } from "./menuEvents";
-import { setNotifier } from "./notify";
+import { onMenu, typingNow, undoText } from "./menuEvents";
+import { notify, setNotifier } from "./notify";
+import { saveAsTemplate } from "./templates";
 import { isMac, keyLabel } from "./platform";
 import { FindBar } from "./components/FindBar";
+import { FormatToolbar } from "./components/FormatToolbar";
 import { VersionHistory } from "./components/VersionHistory";
 import type { Point } from "./geometry";
 import { hiddenItems } from "./mindmap";
@@ -33,6 +35,8 @@ import {
   makeBoardDoc,
   openBoard,
   refreshBoardIndex,
+  renameLinks,
+  takePendingFocus,
   useBoardIndex,
 } from "./navigation";
 import { CanvasGestures } from "./components/CanvasGestures";
@@ -42,6 +46,7 @@ import {
   BackIcon,
   BoardLinkIcon,
   BoardsIcon,
+  DuplicateIcon,
   FileIcon,
   FitIcon,
   HistoryIcon,
@@ -54,11 +59,11 @@ import {
   RedoIcon,
   UndoIcon,
 } from "./components/icons";
-import { nodeTypes } from "./components/items";
+import { describe, nodeTypes } from "./components/items";
 import { edgeTypes } from "./components/LinkLine";
 import LinkPreview from "./components/LinkPreview";
 import { LinkToolbar, SelectionToolbar, ToolButton } from "./components/Toolbars";
-import { addImages } from "./images";
+import { addFiles, FILE_EXTENSIONS } from "./images";
 import { rectOf } from "./layout";
 import { isTauri, onSaveNotice, type SaveStatus } from "./persistence";
 import { boardStore, pauseSnapping, setSnapZoom, useBoard } from "./store";
@@ -90,6 +95,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
   const edges = useBoard((s) => s.edges);
   const [palette, setPalette] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
   // Where a board card will go when a board is picked from the "Link to a board" list.
   const [pickerAt, setPickerAt] = useState<Point | null>(null);
 
@@ -125,6 +131,26 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
   const pickImage = useCallback(() => fileInput.current?.click(), []);
   const viewCenter = useCallback(() => rf.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }), [rf]);
   const backOrHome = back ? onBack : onHome;
+
+  // Renaming this board (or undoing a rename) keeps [[links]] to it on other boards working.
+  const title = useBoard((s) => s.title);
+  const boardId = useBoard((s) => s.boardId);
+  const shownTitle = useRef({ id: boardId, title });
+  useEffect(() => {
+    const prev = shownTitle.current;
+    shownTitle.current = { id: boardId, title };
+    if (prev.id === boardId && prev.title !== title) void renameLinks(prev.title, title, boardId);
+  }, [title, boardId]);
+
+  // Clicking a #tag finds it on the board.
+  useEffect(() => {
+    const onFind = (e: Event) => {
+      setFindQuery((e as CustomEvent<string>).detail);
+      setFindOpen(true);
+    };
+    window.addEventListener("mythra:find", onFind);
+    return () => window.removeEventListener("mythra:find", onFind);
+  }, []);
 
   useEffect(() => {
     void refreshBoardIndex();
@@ -213,6 +239,14 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           run: () => boardStore.getState().setStyle(boardStore.getState().style === "sketchy" ? "clean" : "sketchy"),
         },
         { id: "board:history", group: "Board", label: "Version history…", icon: <HistoryIcon />, keywords: "restore undo backup", run: () => setHistoryOpen(true) },
+        {
+          id: "board:template",
+          group: "Board",
+          label: "Save as template",
+          icon: <DuplicateIcon />,
+          keywords: "reuse starter",
+          run: () => void saveAsTemplate(boardStore.getState()).then(() => setNotice("Saved as a template. Find it on the home screen.")),
+        },
         { id: "board:file", group: "Board", label: "Save a board file…", icon: <FileIcon />, keywords: "backup share export mythra", run: () => setExportOpen("mythra") },
       ],
     }),
@@ -256,6 +290,12 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           tidy: () => void s.tidyUp(ids.length === 1 ? ids : undefined),
           fold: () => ids.length === 1 && s.toggleCollapse(ids[0]),
         };
+        if (id === "undo" || id === "redo") {
+          if (typingNow()) undoText(id === "redo");
+          else if (id === "undo") s.undo();
+          else s.redo();
+          return true;
+        }
         if (anywhere[id]) {
           anywhere[id]();
           return true;
@@ -324,7 +364,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
     const files = [...e.dataTransfer.files];
     if (!files.length) return;
     e.preventDefault();
-    void addImages(files, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+    void addFiles(files, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })).then((m) => m && setNotice(m));
   };
 
   const drawing = tool === "pen" || tool === "eraser" || tool === "shape" || tool === "frame" || tool === "arrow" || tool === "lasso";
@@ -402,7 +442,16 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         onDoubleClick={onDoubleClick}
         onMove={(_, viewport) => setSnapZoom(viewport.zoom)}
         onMoveEnd={(_, viewport) => store.setViewport(viewport)}
-        onInit={(instance) => setSnapZoom(instance.getZoom())}
+        onInit={(instance) => {
+          setSnapZoom(instance.getZoom());
+          // Opened from a search result: show that item.
+          const focus = takePendingFocus();
+          const target = focus && boardStore.getState().nodes.find((n) => n.id === focus);
+          if (target) {
+            boardStore.getState().selectOnly([target.id]);
+            setTimeout(() => void instance.fitView({ nodes: [{ id: target.id }], padding: 0.8, maxZoom: 1.2, duration: 300 }), 60);
+          }
+        }}
         defaultViewport={initialViewport.current ?? undefined}
         fitView={fitOnOpen.current}
         fitViewOptions={FIT_OPTIONS}
@@ -436,6 +485,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         )}
         <SelectionToolbar onMore={(x, y) => setMenu({ x, y, kind: "items" })} />
         <LinkToolbar />
+        <FormatToolbar />
         <CanvasGestures container={container} />
         <BoardDefs />
         <Guides />
@@ -463,7 +513,15 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         onPresent={present}
         onSettings={() => setSettingsOpen(true)}
       />
-      {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
+      {findOpen && (
+        <FindBar
+          initial={findQuery}
+          onClose={() => {
+            setFindOpen(false);
+            setFindQuery("");
+          }}
+        />
+      )}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
       {pickerAt && <BoardPicker at={pickerAt} onClose={() => setPickerAt(null)} />}
 
@@ -481,14 +539,14 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       <input
         ref={fileInput}
         type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
+        accept={["image/png", "image/jpeg", "image/gif", "image/webp", ...FILE_EXTENSIONS.map((x) => `.${x}`)].join(",")}
         multiple
         hidden
         onChange={(e) => {
           const files = [...(e.target.files ?? [])];
           e.target.value = "";
           const c = rf.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-          void addImages(files, c);
+          void addFiles(files, c).then((m) => m && setNotice(m));
         }}
       />
 
@@ -536,6 +594,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           onPickBoard={(at) => setPickerAt(at)}
         />
       )}
+      <SelectionAnnouncer />
       {notice && (
         <div className="toast" role="status">
           {notice}
@@ -581,6 +640,24 @@ function BoardPicker({ at, onClose }: { at: Point; onClose: () => void }) {
     [at],
   );
   return <CommandPalette commands={commands} dynamic={create} placeholder="Link to which board? Type to search or name a new one" onClose={onClose} />;
+}
+
+/** Tells screen readers what's selected, so the board can be explored by keyboard. */
+function SelectionAnnouncer() {
+  const message = useBoard((s) => {
+    const sel = s.nodes.filter((n) => n.selected);
+    if (sel.length === 1) {
+      const n = sel[0];
+      const links = s.edges.filter((e) => e.source === n.id || e.target === n.id).length;
+      return `${describe(n.type, n.data)}${links ? `. ${links} link${links === 1 ? "" : "s"}` : ""}. Selected.`;
+    }
+    return sel.length ? `${sel.length} items selected.` : "";
+  });
+  return (
+    <div className="sr-only" aria-live="polite">
+      {message}
+    </div>
+  );
 }
 
 /** Alignment lines shown while dragging. Kept one screen pixel thick at any zoom. */
@@ -807,6 +884,19 @@ function TitleBar({
                 className="menu__item"
                 onClick={() => {
                   setMenu(false);
+                  void saveAsTemplate(boardStore.getState()).then(
+                    () => notify("Saved as a template. Find it on the home screen."),
+                    () => notify("Couldn't save the template"),
+                  );
+                }}
+              >
+                <span>Save as template</span>
+              </button>
+              <button
+                type="button"
+                className="menu__item"
+                onClick={() => {
+                  setMenu(false);
                   onPresent();
                 }}
               >
@@ -864,6 +954,9 @@ const SHORTCUTS: [string, string][] = [
   ["⇧1 / ⇧2 / ⇧0", "Fit all / Zoom to selection / 100%"],
   ["⌘K", "Command palette: every action and board"],
   ["⌘F", "Find on this board"],
+  ["⌥ + arrow keys", "Move to the nearest item in that direction"],
+  ["⌘B / ⌘I", "Bold / Italic while typing"],
+  ["#tag in a note", "A tag you can click to find"],
   ["⇧⌘P", "Present your sections as slides"],
   ["⌘G / ⇧⌘G", "Group / Ungroup"],
   ["⇧⌘L", "Lock or unlock"],

@@ -24,7 +24,7 @@ const boxFrom = (a: Point, b: Point): Rect => ({
 });
 
 /** The topmost linkable, visible item under a board point. */
-function itemAt(p: Point): string | null {
+export function itemAt(p: Point): string | null {
   const s = boardStore.getState();
   const hidden = hiddenItems(s.nodes, s.edges);
   for (let i = s.nodes.length - 1; i >= 0; i--) {
@@ -157,7 +157,7 @@ export function CanvasGestures({ container }: { container: RefObject<HTMLDivElem
             if (linkId) s.selectOnly([], [linkId]);
             return;
           }
-          const id = s.addArrow(start, current, { arrowHead: s.arrowHead, color: s.penColor, size: s.penSize });
+          const id = s.addArrow(start, current, { arrowHead: s.arrowHead, color: s.penColor, size: s.penSize, startId: a, endId: b });
           s.selectOnly([id]);
           return;
         }

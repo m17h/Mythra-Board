@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AI_MODELS, aiSupported, clearKey, getModel, hasKey, saveKey, setModel, type AiModel } from "../ai";
-import { isTauri } from "../persistence";
+import { formatBytes } from "../images";
+import { cleanupFiles, isTauri } from "../persistence";
 import { useEscape } from "../useDismiss";
 import { ThemeSwitch } from "./ThemeSwitch";
 
@@ -106,6 +107,27 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
                     Back to this Mac
                   </button>
                 )}
+              </div>
+              <div className="settings__row">
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  disabled={moving}
+                  onClick={() =>
+                    void cleanupFiles().then(
+                      (r) =>
+                        setMessage(
+                          r.files
+                            ? `Removed ${r.files} unused picture${r.files === 1 ? "" : "s"} and file${r.files === 1 ? "" : "s"}, freeing ${formatBytes(r.bytes)}.`
+                            : "Nothing to clean up. Every picture and file is still in use.",
+                        ),
+                      (err) => setMessage(`Couldn't clean up: ${err}`),
+                    )
+                  }
+                >
+                  Free up space
+                </button>
+                <span className="settings__note">Removes pictures and files no board, deleted board or version uses any more.</span>
               </div>
               <div className="settings__note">
                 Keep boards in iCloud Drive (or any synced folder) to use them on all your Macs. If a board is changed on two Macs at

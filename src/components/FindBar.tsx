@@ -12,10 +12,11 @@ function searchableText(n: BoardNode): string {
 }
 
 /** ⌘F: find words on this board and step through the matches. */
-export function FindBar({ onClose }: { onClose: () => void }) {
+export function FindBar({ onClose, initial = "" }: { onClose: () => void; initial?: string }) {
   const rf = useReactFlow();
   const nodes = useBoard((s) => s.nodes);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initial);
+  useEffect(() => setQuery(initial), [initial]);
   const [index, setIndex] = useState(0);
   const input = useRef<HTMLInputElement>(null);
 

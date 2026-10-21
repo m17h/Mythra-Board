@@ -28,10 +28,25 @@ export function dispatchMenu(id: string) {
   for (const h of handlers) if (h(id)) return;
 }
 
+/** Undo or redo typing in the focused text field. */
+export const undoText = (redo = false) => document.execCommand(redo ? "redo" : "undo");
+
 let listening = false;
 export async function listenToMenu() {
   if (listening || !isTauri()) return;
   listening = true;
+  // ⌘Z while typing: undo the text exactly once, whether the key or the menu gets there first.
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== "z" || !typingNow()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      undoText(e.shiftKey);
+      markKeyHandled();
+    },
+    true,
+  );
   const { listen } = await import("@tauri-apps/api/event");
   await listen<string>("menu", (e) => dispatchMenu(e.payload));
 }

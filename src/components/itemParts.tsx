@@ -1,6 +1,7 @@
 import { Handle, NodeResizeControl, NodeResizer, Position, ResizeControlVariant } from "@xyflow/react";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { childrenOf, descendants } from "../mindmap";
+import { formatText } from "./FormatToolbar";
 import { boardStore, useBoard, type EditField } from "../store";
 import { MAX_NOTE_WIDTH, MIN_NOTE_WIDTH } from "../types";
 
@@ -179,6 +180,14 @@ export function TextEditor({
         if (boardStore.getState().editingId === id) boardStore.getState().stopEditing();
       }}
       onKeyDown={(e) => {
+        // ⌘B / ⌘I / ⇧⌘X format the selected text.
+        const mod = e.metaKey || e.ctrlKey;
+        const style = !mod || singleLine ? null : e.key.toLowerCase() === "b" ? "bold" : e.key.toLowerCase() === "i" ? "italic" : e.shiftKey && e.key.toLowerCase() === "x" ? "strike" : null;
+        if (style) {
+          e.preventDefault();
+          formatText(e.currentTarget, style);
+          return;
+        }
         if (field === "title" && (e.key === "Enter" || e.key === "ArrowDown") && !e.metaKey) {
           // From a card title, Enter moves on to the body.
           e.preventDefault();

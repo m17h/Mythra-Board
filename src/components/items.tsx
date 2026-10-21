@@ -1,12 +1,14 @@
 import { useReactFlow, type NodeProps } from "@xyflow/react";
 import { memo, useEffect, useMemo, useState, type CSSProperties } from "react";
-import { hostOf } from "../images";
 import { strokePath } from "../ink";
-import { assetUrl, openExternal } from "../persistence";
+import { formatBytes, hostOf } from "../images";
+import { notify } from "../notify";
+import { assetUrl, openAsset, openExternal } from "../persistence";
 import { boardStore, useBoard } from "../store";
 import { arrowHead, offset, unit } from "../geometry";
 import { openBoard, useBoardIndex } from "../navigation";
 import { DEFAULT_NOTE_WIDTH, DEFAULT_OUTLINE, textStyleOf, type BoardNode, type ItemData, type ItemType, type Size } from "../types";
+import { itemAt } from "./CanvasGestures";
 import Thumbnail from "./Thumbnail";
 import { LABEL_INSETS, SHAPE_DETAILS, SHAPE_PATHS } from "../shapes";
 import { roughPath } from "../sketch";
@@ -22,6 +24,26 @@ const startEditing = (id: string) => (e: React.MouseEvent) => {
 };
 
 const toggle = (id: string) => (line: number) => boardStore.getState().toggleTask(id, line);
+
+const TYPE_NAMES: Record<ItemType, string> = {
+  note: "Note",
+  text: "Text",
+  shape: "Shape",
+  image: "Picture",
+  frame: "Section",
+  ink: "Drawing",
+  link: "Web link",
+  board: "Board link",
+  arrow: "Arrow",
+  file: "File",
+};
+
+/** What a screen reader says for an item. */
+export function describe(type: ItemType, data: ItemData): string {
+  const words = [data.title, data.text || data.url].filter(Boolean).join(": ").replace(/\s+/g, " ").trim().slice(0, 160);
+  const kind = type === "shape" && data.shape ? `${TYPE_NAMES.shape} (${data.shape})` : TYPE_NAMES[type];
+  return [kind, words, data.locked ? "locked" : "", data.collapsed ? "folded" : ""].filter(Boolean).join(", ");
+}
 
 const cls = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
@@ -71,6 +93,8 @@ export const NoteItem = memo(function NoteItem({ id, type, data, selected, dragg
         dragging && "is-dragging",
       )}
       style={style}
+      role="group"
+      aria-label={describe(type, data)}
       onDoubleClick={startEditing(id)}
     >
       <span className="item-sketch" aria-hidden />
@@ -136,6 +160,8 @@ export const ShapeItem = memo(function ShapeItem({ id, data, selected, dragging 
         dragging && "is-dragging",
       )}
       style={style}
+      role="group"
+      aria-label={describe("shape", data)}
       onDoubleClick={startEditing(id)}
     >
       {!SHAPE_PATHS[shape] && <span className="item-sketch" aria-hidden />}
@@ -165,6 +191,8 @@ export const ShapeItem = memo(function ShapeItem({ id, data, selected, dragging 
 export const ImageItem = memo(function ImageItem({ id, data, selected, dragging }: NodeProps<BoardNode>) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const editing = useEditing(id);
+  const cropping = useBoard((s) => s.croppingId === id);
   useEffect(() => {
     let live = true;
     if (data.asset)
@@ -177,16 +205,104 @@ export const ImageItem = memo(function ImageItem({ id, data, selected, dragging 
     };
   }, [data.asset]);
   const { className, style } = look("image", data);
+  const [fx, fy] = data.crop ?? [0.5, 0.5];
+
+  // While cropping, dragging the picture slides it around inside its frame.
+  const pan = (e: React.PointerEvent) => {
+    if (!cropping) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture(e.pointerId);
+    const start = { x: e.clientX, y: e.clientY, fx, fy };
+    const box = el.getBoundingClientRect();
+    const move = (ev: PointerEvent) => {
+      const clamp = (v: number) => Math.min(1, Math.max(0, v));
+      boardStore.getState().patchItem(id, {
+        crop: [clamp(start.fx - (ev.clientX - start.x) / box.width), clamp(start.fy - (ev.clientY - start.y) / box.height)],
+      });
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+  };
+
   return (
-    <div className={cls("image", `color--${data.color}`, className, selected && "is-selected", dragging && "is-dragging")} style={style}>
+    <div
+      className={cls("image", `color--${data.color}`, className, selected && "is-selected", dragging && "is-dragging", cropping && "is-cropping")}
+      style={style}
+      role="img"
+      aria-label={describe("image", data)}
+      onDoubleClick={startEditing(id)}
+    >
       <span className="item-sketch" aria-hidden />
       {src ? (
-        <img src={src} alt="" draggable={false} />
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          decoding="async"
+          className={cropping ? "nodrag" : undefined}
+          style={{ objectPosition: `${fx * 100}% ${fy * 100}%` }}
+          onPointerDown={pan}
+        />
       ) : (
         <div className={cls("image__placeholder", failed && "is-failed")}>{failed ? "Image missing" : ""}</div>
       )}
+      {(editing || data.text) && (
+        <div className="image__caption">
+          {editing ? <TextEditor id={id} text={data.text} className="image__caption-input" placeholder="Add a caption" singleLine /> : data.text}
+        </div>
+      )}
       <LinkHandles id={id} collapsed={data.collapsed} />
-      <BoxResizer visible={!!selected} keepAspectRatio minWidth={40} minHeight={40} />
+      <BoxResizer visible={!!selected && !editing} keepAspectRatio={!cropping} minWidth={40} minHeight={40} />
+    </div>
+  );
+});
+
+/** A document, audio or video file. Double-click (or the button) opens it in its own app. */
+export const FileItem = memo(function FileItem({ id, data, selected, dragging }: NodeProps<BoardNode>) {
+  const { className, style } = look("file", data);
+  const name = data.text || "File";
+  const ext = name.includes(".") ? name.split(".").pop()!.toUpperCase().slice(0, 4) : "FILE";
+  const open = () => data.asset && void openAsset(data.asset, name).catch(() => notify("Couldn't open that file"));
+  return (
+    <div
+      className={cls("note", "linkcard", "filecard", `color--${data.color}`, className, selected && "is-selected", dragging && "is-dragging")}
+      style={style}
+      role="group"
+      aria-label={describe("file", data)}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        open();
+      }}
+    >
+      <span className="item-sketch" aria-hidden />
+      <div className={`filecard__badge filecard__badge--${ext.toLowerCase()}`}>{ext}</div>
+      <div className="linkcard__body">
+        <div className="linkcard__title" title={name}>
+          {name}
+        </div>
+        <div className="linkcard__url">{data.fileSize ? formatBytes(data.fileSize) : "File"}</div>
+      </div>
+      <button
+        type="button"
+        className="linkcard__open nodrag"
+        title="Open"
+        aria-label="Open"
+        onDoubleClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          open();
+        }}
+      >
+        <OpenIcon />
+      </button>
+      <LinkHandles id={id} collapsed={data.collapsed} />
+      {selected && <WidthResizers />}
     </div>
   );
 });
@@ -201,6 +317,8 @@ export const FrameItem = memo(function FrameItem({ id, data, selected }: NodePro
     <div
       className={cls("frame", `color--${data.color}`, className, selected && "is-selected", editing && "is-editing", dropTarget && "is-drop-target")}
       style={style}
+      role="group"
+      aria-label={describe("frame", data)}
       onDoubleClick={(e) => {
         // Double-clicking inside a section adds a note there, just like on the open board.
         if (e.target !== e.currentTarget) return;
@@ -226,7 +344,7 @@ export const InkItem = memo(function InkItem({ data, selected, width, height }: 
   const path = useMemo(() => strokePath(data.points ?? [], data.size), [data.points, data.size]);
   const erasing = useBoard((s) => s.tool === "eraser");
   return (
-    <svg className={cls("ink", `color--${data.color}`, selected && "is-selected", erasing && "is-erasable", data.locked && "is-locked")} width={width} height={height}>
+    <svg className={cls("ink", `color--${data.color}`, selected && "is-selected", erasing && "is-erasable", data.locked && "is-locked")} width={width} height={height} role="img" aria-label="Drawing">
       <path d={path} />
     </svg>
   );
@@ -241,6 +359,8 @@ export const LinkCardItem = memo(function LinkCardItem({ id, data, selected, dra
     <div
       className={cls("note", "linkcard", `color--${data.color}`, className, selected && "is-selected", editing && "is-editing", dragging && "is-dragging")}
       style={style}
+      role="group"
+      aria-label={describe("link", data)}
       onDoubleClick={startEditing(id)}
     >
       <span className="item-sketch" aria-hidden />
@@ -287,6 +407,8 @@ export const BoardCardItem = memo(function BoardCardItem({ id, data, selected, d
     <div
       className={cls("note", "boardcard", `color--${data.color}`, className, missing && "is-missing", selected && "is-selected", dragging && "is-dragging")}
       style={style}
+      role="group"
+      aria-label={describe("board", data)}
       onDoubleClick={(e) => {
         e.stopPropagation();
         open();
@@ -353,18 +475,23 @@ export const ArrowItem = memo(function ArrowItem({ id, data, selected, width, he
       if (which === 0) store.setArrowEnds(id, p, fixed);
       else store.setArrowEnds(id, fixed, p);
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       el.removeEventListener("pointermove", move as EventListener);
-      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointerup", up as EventListener);
+      // Dropping an end on an item sticks it there; anywhere else unsticks it.
+      const p = rf.screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
+      store.stickArrowEnd(id, which === 0 ? "start" : "end", itemAt(p));
       store.commit();
     };
     el.addEventListener("pointermove", move as EventListener);
-    el.addEventListener("pointerup", up);
+    el.addEventListener("pointerup", up as EventListener);
   };
 
   return (
     <svg
       className={cls("free-arrow", `color--${data.color}`, data.outlineStyle === "dashed" && "is-dashed", selected && "is-selected", data.locked && "is-locked")}
+      role="img"
+      aria-label={data.arrowHead === "none" ? "Line" : "Arrow"}
       width={width}
       height={height}
     >
@@ -392,4 +519,5 @@ export const nodeTypes = {
   link: LinkCardItem,
   board: BoardCardItem,
   arrow: ArrowItem,
+  file: FileItem,
 };

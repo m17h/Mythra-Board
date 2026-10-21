@@ -394,3 +394,20 @@ export const ArrangeGlyph = ({ mode }: { mode: string }) => (
     <path d={ARRANGE_PATHS[mode]} />
   </Icon>
 );
+export const CropIcon = () => (
+  <Icon>
+    <path d="M6 2.5V17a1 1 0 0 0 1 1h14.5M2.5 6H17a1 1 0 0 1 1 1v14.5" />
+  </Icon>
+);
+export const CropResetIcon = () => (
+  <Icon>
+    <rect x="4" y="5" width="16" height="14" rx="2" />
+    <path d="m9 10 6 4M15 10l-6 4" />
+  </Icon>
+);
+export const CaptionIcon = () => (
+  <Icon>
+    <rect x="4" y="3.5" width="16" height="11" rx="2" />
+    <path d="M6 18.5h12M8.5 21h7" />
+  </Icon>
+);

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import BoardView from "./BoardView";
 import Home from "./Home";
 import { importBoardFile } from "./boardFile";
-import { listenToMenu, onMenu } from "./menuEvents";
+import { listenToMenu, onMenu, typingNow, undoText } from "./menuEvents";
 import { createBoard, makeBoardDoc, setNavigator, updateIndexedBoard } from "./navigation";
 import { setThemeSetting, type ThemeSetting } from "./theme";
 import {
@@ -89,6 +89,11 @@ export default function App() {
   useEffect(
     () =>
       onMenu((id) => {
+        // Off a board, Undo and Redo only apply to text fields.
+        if (id === "undo" || id === "redo") {
+          if (typingNow()) undoText(id === "redo");
+          return true;
+        }
         if (id.startsWith("theme-")) {
           setThemeSetting(id.slice(6) as ThemeSetting);
           return true;

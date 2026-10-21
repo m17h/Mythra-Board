@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from "react";
-import { findBoardByTitle, openBoardByTitle, useBoardIndex } from "../navigation";
+import { findBoardByTitle, findOnBoard, openBoardByTitle, useBoardIndex } from "../navigation";
 import { openExternal } from "../persistence";
 
 /** A [[Board name]] link: opens that board, or creates it if it doesn't exist yet. */
@@ -27,7 +27,7 @@ const BULLET = /^\s*[-*•] (.*)$/;
 const NUMBERED = /^\s*(\d+)[.)] (.*)$/;
 const HEADING = /^(#{1,3}) (.*)$/;
 const QUOTE = /^> ?(.*)$/;
-const INLINE = /(\[\[[^\]\n]+\]\]|\*\*[^*\n]+\*\*|~~[^~\n]+~~|`[^`\n]+`|(?<![\w*])\*[^*\s][^*\n]*\*(?!\w)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+const INLINE = /(\[\[[^\]\n]+\]\]|\*\*[^*\n]+\*\*|~~[^~\n]+~~|`[^`\n]+`|(?<![\w*])\*[^*\s][^*\n]*\*(?!\w)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"]|(?<![\w#/&])#[A-Za-z][\w-]{0,40})/g;
 
 export function taskStats(text: string): { done: number; total: number } {
   let done = 0;
@@ -49,6 +49,23 @@ function inline(text: string): ReactNode[] {
     const i = m.index!;
     if (i > last) out.push(text.slice(last, i));
     if (t.startsWith("[[")) out.push(<BoardLinkChip key={i} name={t.slice(2, -2)} />);
+    else if (t.startsWith("#"))
+      out.push(
+        <button
+          key={i}
+          type="button"
+          className="rt-tag nodrag"
+          title={`Find ${t} on this board`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            findOnBoard(t);
+          }}
+        >
+          {t}
+        </button>,
+      );
     else if (t.startsWith("**")) out.push(<strong key={i}>{t.slice(2, -2)}</strong>);
     else if (t.startsWith("~~")) out.push(<s key={i}>{t.slice(2, -2)}</s>);
     else if (t.startsWith("`")) out.push(<code key={i}>{t.slice(1, -1)}</code>);

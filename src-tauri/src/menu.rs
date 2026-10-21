@@ -54,9 +54,10 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         ],
     )?;
 
+    // Undo/Redo are the app's own: they undo typing in a text field, and board changes otherwise.
     let edit = SubmenuBuilder::new(app, "Edit")
-        .undo()
-        .redo()
+        .item(&item(app, "undo", "Undo", Some("CmdOrCtrl+Z"))?)
+        .item(&item(app, "redo", "Redo", Some("CmdOrCtrl+Shift+Z"))?)
         .separator()
         .cut()
         .copy()

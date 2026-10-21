@@ -39,6 +39,9 @@ import {
   ArrowBothIcon,
   CardTitleIcon,
   AlignItemsIcon,
+  CaptionIcon,
+  CropIcon,
+  CropResetIcon,
   ArrangeGlyph,
   ChevronIcon,
   GroupIcon,
@@ -511,6 +514,37 @@ function TextPanel({ items }: { items: Selected[] }) {
   );
 }
 
+/** Crop a picture to any shape (drag the picture to choose what shows), or undo the crop. */
+function CropButtons({ id, cropped }: { id: string; cropped: boolean }) {
+  const cropping = useBoard((s) => s.croppingId === id);
+  const store = boardStore.getState();
+  const reset = () => {
+    const img = document.querySelector<HTMLImageElement>(`.react-flow__node[data-id="${CSS.escape(id)}"] img`);
+    const node = store.nodes.find((n) => n.id === id);
+    if (!img?.naturalWidth || !node) return;
+    store.setCropping(null);
+    store.begin();
+    const width = node.width ?? img.naturalWidth;
+    store.patchItem(id, { crop: undefined }, { width, height: Math.round((width * img.naturalHeight) / img.naturalWidth) });
+    store.commit();
+  };
+  return (
+    <>
+      <ToolButton label={cropping ? "Done cropping (Esc)" : "Crop"} active={cropping} onClick={() => store.setCropping(cropping ? null : id)}>
+        <CropIcon />
+      </ToolButton>
+      {cropped && !cropping && (
+        <ToolButton label="Undo crop" onClick={reset}>
+          <CropResetIcon />
+        </ToolButton>
+      )}
+      <ToolButton label="Caption" onClick={() => store.startEditing(id)}>
+        <CaptionIcon />
+      </ToolButton>
+    </>
+  );
+}
+
 /** Colour, outline, text and arrange controls above the selected items. */
 export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) => void }) {
   const selectedIds = useBoard(useShallow((s) => s.nodes.filter((n) => n.selected).map((n) => `${n.id}:${n.type}`)));
@@ -518,6 +552,8 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
   const hidden = useBoard(
     (s) =>
       s.connecting ||
+      // While typing, the formatting bar takes this spot.
+      (s.editingId !== null && s.editingField === "body" && s.nodes.some((n) => n.id === s.editingId && n.type !== "frame" && n.type !== "link")) ||
       s.tool === "pen" ||
       s.tool === "eraser" ||
       s.nodes.some((n) => n.dragging) ||
@@ -527,8 +563,12 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
   const bar = useRef<HTMLDivElement>(null);
   const key = selectedIds.join(",");
 
-  // Panels close when the selection changes or you click elsewhere.
-  useEffect(() => setOpen(null), [key]);
+  // Panels close (and cropping ends) when the selection changes or you click elsewhere.
+  useEffect(() => {
+    setOpen(null);
+    const s = boardStore.getState();
+    if (s.croppingId && !s.nodes.some((n) => n.id === s.croppingId && n.selected)) s.setCropping(null);
+  }, [key]);
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
@@ -608,6 +648,7 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
             <AlignItemsIcon />
           </PanelButton>
         )}
+        {single?.type === "image" && <CropButtons id={single.id} cropped={!!single.data.crop} />}
         {single?.type === "note" && (
           <ToolButton
             label={single.data.title === undefined ? "Add a card title" : "Remove the card title"}

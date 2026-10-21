@@ -1,9 +1,36 @@
 import { Position, useReactFlow } from "@xyflow/react";
 import { useEffect, useRef, type RefObject } from "react";
-import { addImages, asUrl, isImageFile } from "./images";
+import { addFiles, asUrl, isAttachable } from "./images";
+import { nearestInDirection, rectOf } from "./layout";
 import { markKeyHandled } from "./menuEvents";
+import { hiddenItems } from "./mindmap";
+import { fromSaved, toSaved } from "./persistence";
 import { boardStore, type Clip, type Tool } from "./store";
 import { DEFAULT_NOTE_WIDTH, type ArrangeMode } from "./types";
+
+/** Clipboard type for items copied from a board. */
+const CLIP_TYPE = "application/x-mythra-items";
+
+/**
+ * The last thing copied, kept outside any one board so it can be pasted on another.
+ * (The clipboard copy above is preferred; this covers systems that drop custom types.)
+ */
+let lastCopy: { text: string; clip: Clip } | null = null;
+
+function readClip(data: DataTransfer | null): Clip | null {
+  try {
+    const raw = data?.getData(CLIP_TYPE);
+    if (!raw) return null;
+    const clip = JSON.parse(raw) as Clip;
+    if (!Array.isArray(clip?.nodes) || !Array.isArray(clip?.links)) return null;
+    // Run it through the same checks as opening a saved board.
+    const blank = { id: "clip", title: "", createdAt: 0, updatedAt: 0, pinned: false, background: "dots" as const, style: "clean" as const, viewport: null };
+    const safe = fromSaved(toSaved({ ...blank, nodes: clip.nodes, edges: clip.links }));
+    return safe.nodes.length ? { nodes: safe.nodes, links: safe.edges } : null;
+  } catch {
+    return null;
+  }
+}
 
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA");
@@ -42,7 +69,6 @@ export function useShortcuts(options: Options) {
   const { pointer } = options;
 
   useEffect(() => {
-    let lastCopy: { text: string; clip: Clip } | null = null;
     let lastPaste: { x: number; y: number; count: number } | null = null;
 
     /** The pointer's position on the board, if it is over the board. */
@@ -88,6 +114,35 @@ export function useShortcuts(options: Options) {
         markKeyHandled();
       };
 
+      // ⌥ + arrow keys move the selection to the nearest item in that direction.
+      if (e.altKey && !e.metaKey && !e.ctrlKey && key.startsWith("Arrow")) {
+        const dir = key.slice(5).toLowerCase() as "left" | "right" | "up" | "down";
+        const hidden = hiddenItems(s.nodes, s.edges);
+        const candidates = s.nodes.filter((n) => !hidden.has(n.id) && n.type !== "frame" && n.type !== "ink");
+        const current = selected.length === 1 ? selected[0] : null;
+        let next: string | null;
+        if (current) {
+          next = nearestInDirection(rectOf(current), candidates.filter((n) => n.id !== current.id).map((n) => ({ id: n.id, ...rectOf(n) })), dir);
+        } else {
+          // Nothing selected yet: start from the item nearest the middle of the screen.
+          const mid = viewCenter();
+          next = candidates.reduce<{ id: string; d: number } | null>((acc, n) => {
+            const r = rectOf(n);
+            const d = Math.hypot(r.x + r.width / 2 - mid.x, r.y + r.height / 2 - mid.y);
+            return !acc || d < acc.d ? { id: n.id, d } : acc;
+          }, null)?.id ?? null;
+        }
+        if (next) {
+          s.selectOnly([next]);
+          const r = rectOf(s.nodes.find((n) => n.id === next)!);
+          const vp = rf.getViewport();
+          const sx = r.x * vp.zoom + vp.x;
+          const sy = r.y * vp.zoom + vp.y;
+          if (sx < 40 || sy < 40 || sx + r.width * vp.zoom > window.innerWidth - 40 || sy + r.height * vp.zoom > window.innerHeight - 80)
+            void rf.setCenter(r.x + r.width / 2, r.y + r.height / 2, { zoom: vp.zoom, duration: 200 });
+        }
+        return handled();
+      }
       if (e.altKey && !e.metaKey && !(e.ctrlKey && e.code === "KeyG")) {
         // Option-key alignment, as in most design apps.
         const ids = selected.map((n) => n.id);
@@ -131,7 +186,8 @@ export function useShortcuts(options: Options) {
           s.deleteSelection();
           return handled();
         case "Escape":
-          if (s.tool !== "select") s.setTool("select");
+          if (s.croppingId) s.setCropping(null);
+          else if (s.tool !== "select") s.setTool("select");
           else s.clearSelection();
           return;
         case "Enter":
@@ -179,6 +235,8 @@ export function useShortcuts(options: Options) {
         .filter(Boolean)
         .join("\n\n");
       e.clipboardData?.setData("text/plain", text || " ");
+      // The items themselves, so they paste intact on any board, in any window.
+      e.clipboardData?.setData(CLIP_TYPE, JSON.stringify(clip));
       lastCopy = { text: text || " ", clip };
       lastPaste = null;
       if (cut) s.deleteSelection();
@@ -187,7 +245,7 @@ export function useShortcuts(options: Options) {
     const onPaste = (e: ClipboardEvent) => {
       if (isTyping(document.activeElement)) return;
       const s = boardStore.getState();
-      const images = [...(e.clipboardData?.files ?? [])].filter(isImageFile);
+      const images = [...(e.clipboardData?.files ?? [])].filter(isAttachable);
       const text = e.clipboardData?.getData("text/plain") ?? "";
       if (!images.length && !text) return;
       e.preventDefault();
@@ -200,11 +258,12 @@ export function useShortcuts(options: Options) {
         lastPaste = { ...at, count: 0 };
       }
       if (images.length) {
-        void addImages(images, at ?? viewCenter());
+        void addFiles(images, at ?? viewCenter());
         return;
       }
-      if (lastCopy && text === lastCopy.text) {
-        s.paste(lastCopy.clip, at ?? undefined);
+      const copied = readClip(e.clipboardData) ?? (lastCopy && text === lastCopy.text ? lastCopy.clip : null);
+      if (copied) {
+        s.paste(copied, at ?? undefined);
         return;
       }
       const body = text.trim();

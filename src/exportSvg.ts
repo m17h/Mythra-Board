@@ -4,6 +4,7 @@ import { strokePath } from "./ink";
 import { rectOf } from "./layout";
 import { computeLinkEnds, linkGeometry } from "./linkPath";
 import { boardIndex } from "./navigation";
+import { formatBytes } from "./images";
 import { loadAssetBytes } from "./persistence";
 import { SHAPE_DETAILS, SHAPE_PATHS } from "./shapes";
 import {
@@ -17,6 +18,13 @@ import {
 } from "./types";
 
 const PAD = 64;
+
+/** The nearest SVG alignment for a picture's crop focus. */
+const cropAlign = (crop?: [number, number]) => {
+  const pick = (v: number, axis: "x" | "y") => `${axis}${v < 0.34 ? "Min" : v > 0.66 ? "Max" : "Mid"}`;
+  const [fx, fy] = crop ?? [0.5, 0.5];
+  return `${pick(fx, "x")}${pick(fy, "y").replace("y", "Y")}`;
+};
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const n2 = (v: number) => Math.round(v * 100) / 100;
@@ -258,10 +266,12 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
         defs.push(`<clipPath id="${clip}"><rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="10"/></clipPath>`);
         if (href)
           parts.push(
-            `<image href="${href}" x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clip})"/>`,
+            `<image href="${href}" x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" preserveAspectRatio="${cropAlign(d.crop)} slice" clip-path="url(#${clip})"/>`,
           );
         if ((d.outline ?? 0) > 0)
           parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="10" fill="none" ${outlineAttrs(n, p, "none")}/>`);
+        if (d.text)
+          parts.push(layout.block([{ text: d.text, size: 13, weight: 400 }], { x: r.x, y: r.y + r.height + 8, width: r.width, height: 40 }, { align: "center", color: p.muted }).svg);
         return;
       }
       case "shape": {
@@ -301,6 +311,11 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
         // Notes, link cards and board cards share the card look.
         parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="12" fill="${p.soft(d.color)}" ${outlineAttrs(n, p, p.noteBorder)}/>`);
         const inner = { x: r.x + 15, y: r.y + 12, width: r.width - 30, height: r.height - 24 };
+        if (n.type === "file") {
+          const size = d.fileSize ? formatBytes(d.fileSize) : "File";
+          parts.push(layout.block([{ text: d.text || "File", size: 14.5, weight: 650 }, { text: size, size: 12, weight: 400, color: p.muted }], inner, { color: p.text, middle: true }).svg);
+          return;
+        }
         if (n.type === "link" || n.type === "board") {
           const target = n.type === "board" ? boardIndex().find((b) => b.id === d.boardId) : undefined;
           const title = n.type === "board" ? (target?.title ?? d.text) : d.text || d.url?.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] || "";

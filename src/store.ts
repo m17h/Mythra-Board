@@ -10,7 +10,10 @@ import { nanoid } from "nanoid";
 import { createStore, useStore } from "zustand";
 import { center, containsPoint, rectsBounds, type Point, type Rect } from "./geometry";
 import { decorate, defaultSize, freeSpot, itemsInFrame, rectOf } from "./layout";
+import { arrowBox, followItems, stuckEnds, unstickMoved } from "./arrowBinding";
 import { hiddenItems, tidyTree, treeRoots } from "./mindmap";
+
+export { arrowBox };
 import { snapMove, type Guide } from "./snap";
 import {
   AUTO_HEIGHT,
@@ -76,9 +79,6 @@ const readSnapping = () => {
   }
 };
 const PASTE_OFFSET = 32;
-/** Room around a free arrow so its ends and arrowheads aren't clipped. */
-const ARROW_PAD = 16;
-
 /** Where each item goes to line up (or spread out evenly) inside `bounds`. */
 export function arrangePositions(
   items: (Rect & { id: string })[],
@@ -112,17 +112,6 @@ export function arrangePositions(
   return out;
 }
 
-/** The item box for a free arrow from `a` to `b`, with its ends relative to that box. */
-export function arrowBox(a: Point, b: Point) {
-  const x = Math.min(a.x, b.x) - ARROW_PAD;
-  const y = Math.min(a.y, b.y) - ARROW_PAD;
-  return {
-    position: { x, y },
-    width: Math.abs(a.x - b.x) + ARROW_PAD * 2,
-    height: Math.abs(a.y - b.y) + ARROW_PAD * 2,
-    ends: [a.x - x, a.y - y, b.x - x, b.y - y] as [number, number, number, number],
-  };
-}
 const FRAME_PADDING = 36;
 
 export type BoardState = {
@@ -201,7 +190,19 @@ export type BoardState = {
   /** Arrange mind-map branches neatly, from the given items (or every tree on the board). */
   tidyUp: (rootIds?: string[]) => number;
   /** A free-standing arrow or line between two board points. */
-  addArrow: (from: Point, to: Point, opts?: { arrowHead?: LinkArrow; color?: Color; size?: Size }) => string;
+  addArrow: (
+    from: Point,
+    to: Point,
+    opts?: { arrowHead?: LinkArrow; color?: Color; size?: Size; startId?: string | null; endId?: string | null },
+  ) => string;
+  /** Stick (or unstick, with null) one end of a free arrow to an item. Wrap in begin/commit. */
+  stickArrowEnd: (id: string, end: "start" | "end", itemId: string | null) => void;
+  /** The picture being cropped, if any. */
+  croppingId: string | null;
+  /** Start or finish cropping a picture (one undo step for the whole crop). */
+  setCropping: (id: string | null) => void;
+  /** Change an item's data (and optionally size) without an undo step; wrap in begin/commit. */
+  patchItem: (id: string, patch: Partial<ItemData>, size?: { width: number; height: number }) => void;
   /** Move a free arrow's ends (board coordinates). Wrap in begin/commit. */
   setArrowEnds: (id: string, from: Point, to: Point) => void;
   /** A card that opens another board. */
@@ -257,6 +258,10 @@ function cleanData(d: ItemData): ItemData {
   if (d.collapsed) out.collapsed = true;
   if (d.ends) out.ends = d.ends.map(round) as ItemData["ends"];
   if (d.arrowHead) out.arrowHead = d.arrowHead;
+  if (d.startId) out.startId = d.startId;
+  if (d.endId) out.endId = d.endId;
+  if (d.fileSize) out.fileSize = d.fileSize;
+  if (d.crop) out.crop = d.crop;
   if (d.locked) out.locked = true;
   if (d.group) out.group = d.group;
   if (d.fill && d.fill !== "solid") out.fill = d.fill;
@@ -287,8 +292,9 @@ export function cleanEdge(e: LinkEdge): LinkEdge {
   };
 }
 
-const serialize = (nodes: BoardNode[], edges: LinkEdge[]) =>
-  JSON.stringify({ n: nodes.map(cleanNode), e: edges.map(cleanEdge) });
+/** One undo step: the board's content plus its name and look. */
+const serialize = (s: Pick<BoardState, "nodes" | "edges" | "title" | "background" | "style">) =>
+  JSON.stringify({ n: s.nodes.map(cleanNode), e: s.edges.map(cleanEdge), t: s.title, b: s.background, st: s.style });
 
 export const defaultLinkData = (style?: LinkStyle): LinkData => ({
   label: "",
@@ -341,9 +347,17 @@ export function createBoardStore() {
   // Items riding along with frames that are being dragged.
   let dragChildren = new Map<string, string[]>();
   let dragActive = false;
+  let draggedIds = new Set<string>();
+
+  /** Move items, then unstick arrows that moved alone and bring stuck arrows along. */
+  const moveItems = (nodes: BoardNode[], moves: Map<string, Point>) => {
+    const ids = new Set(moves.keys());
+    const moved = nodes.map((n) => (moves.has(n.id) ? { ...n, position: moves.get(n.id)! } : n));
+    return followItems(unstickMoved(moved, ids), ids);
+  };
 
   return createStore<BoardState>()((set, get) => {
-    const snapshot = () => serialize(get().nodes, get().edges);
+    const snapshot = () => serialize(get());
 
     const pushHistory = (entry: string) => {
       const past = [...get().past, entry];
@@ -360,11 +374,25 @@ export function createBoardStore() {
     };
 
     const restore = (entry: string) => {
-      const { n, e } = JSON.parse(entry) as { n: BoardNode[]; e: LinkEdge[] };
+      const { n, e, t, b, st } = JSON.parse(entry) as {
+        n: BoardNode[];
+        e: LinkEdge[];
+        t?: string;
+        b?: BoardBackground;
+        st?: BoardStyle;
+      };
       // Reuse known sizes so restored items don't blink while they are re-measured.
       const sizes = new Map(get().nodes.map((x) => [x.id, x.measured]));
       const nodes = n.map((x) => decorate({ ...x, measured: sizes.get(x.id) }));
-      set({ nodes, edges: e, editingId: null, editingLabelId: null });
+      set((s) => ({
+        nodes,
+        edges: e,
+        title: t ?? s.title,
+        background: b ?? s.background,
+        style: st ?? s.style,
+        editingId: null,
+        editingLabelId: null,
+      }));
     };
 
     const linkExists = (a: string, b: string) =>
@@ -398,6 +426,7 @@ export function createBoardStore() {
       penColor: "plain",
       penSize: "m",
       arrowHead: "end",
+      croppingId: null,
       editingId: null,
       editingField: "body",
       editingLabelId: null,
@@ -493,8 +522,12 @@ export function createBoardStore() {
             if (mates.length) all = [...all, ...mates];
           }
         }
+        // Arrows stuck to items that moved or changed size follow them.
+        const moved = new Set(
+          all.filter((c) => (c.type === "position" && c.position) || c.type === "dimensions").map((c) => (c as { id: string }).id),
+        );
         set((s) => ({
-          nodes: applyNodeChanges(all, s.nodes),
+          nodes: followItems(applyNodeChanges(all, s.nodes), moved),
           edges: removed.size ? s.edges.filter((e) => !removed.has(e.source) && !removed.has(e.target)) : s.edges,
         }));
       },
@@ -531,6 +564,7 @@ export function createBoardStore() {
       beginDrag: (ids) => {
         get().begin();
         dragActive = true;
+        draggedIds = new Set(ids);
         const dragged = new Set(ids);
         const nodes = get().nodes;
         dragChildren = new Map();
@@ -541,6 +575,10 @@ export function createBoardStore() {
       },
       endDrag: () => {
         dragActive = false;
+        // Arrows dragged away from the items they were stuck to come unstuck.
+        const moved = new Set([...draggedIds, ...[...dragChildren.values()].flat()]);
+        set((s) => ({ nodes: unstickMoved(s.nodes, moved) }));
+        draggedIds = new Set();
         dragChildren = new Map();
         set({ guides: [], dropFrameId: null });
         get().commit();
@@ -562,14 +600,15 @@ export function createBoardStore() {
           past: [],
           future: [],
           tool: "select",
+          croppingId: null,
           editingId: null,
           editingLabelId: null,
           connecting: false,
         });
       },
-      setTitle: (title) => set({ title }),
-      setBackground: (background) => set({ background }),
-      setStyle: (style) => set({ style }),
+      setTitle: (title) => record(() => set({ title })),
+      setBackground: (background) => record(() => set({ background })),
+      setStyle: (style) => record(() => set({ style })),
       setTool: (tool) => {
         get().stopEditing();
         set({ tool });
@@ -709,23 +748,56 @@ export function createBoardStore() {
         for (const r of roots) for (const [id, p] of tidyTree(r, nodes, edges)) if (!moves.has(id)) moves.set(id, p);
         if (!moves.size) return 0;
         get().stopEditing();
-        record(() =>
-          set((s) => ({
-            nodes: s.nodes.map((n) => {
-              const p = moves.get(n.id);
-              return p ? { ...n, position: { x: round(p.x), y: round(p.y) } } : n;
-            }),
-          })),
-        );
+        for (const [id, p] of moves) moves.set(id, { x: round(p.x), y: round(p.y) });
+        record(() => set((s) => ({ nodes: moveItems(s.nodes, moves) })));
         return moves.size;
       },
 
       addArrow: (from, to, opts) => {
-        const box = arrowBox(from, to);
-        return get().addItem("arrow", box.position, {
-          width: box.width,
-          height: box.height,
-          data: { ends: box.ends, arrowHead: opts?.arrowHead ?? "end", color: opts?.color ?? "plain", size: opts?.size ?? "m" },
+        const data: Partial<ItemData> = { arrowHead: opts?.arrowHead ?? "end", color: opts?.color ?? "plain", size: opts?.size ?? "m" };
+        if (opts?.startId) data.startId = opts.startId;
+        if (opts?.endId) data.endId = opts.endId;
+        // Ends drawn on an item start out stuck to its edge.
+        const draft = { ...makeItem("arrow", { x: 0, y: 0 }), ...arrowBox(from, to) };
+        draft.data = { ...draft.data, ...data, ends: arrowBox(from, to).ends };
+        const [a, b] = stuckEnds(draft, new Map(get().nodes.map((n) => [n.id, n]))) ?? [from, to];
+        const box = arrowBox(a, b);
+        return get().addItem("arrow", box.position, { width: box.width, height: box.height, data: { ...data, ends: box.ends } });
+      },
+
+      setCropping: (id) => {
+        const was = get().croppingId;
+        if (was === id) return;
+        if (was) get().commit();
+        set({ croppingId: id });
+        if (!id) return;
+        get().stopEditing();
+        get().begin();
+        const n = get().nodes.find((x) => x.id === id);
+        if (n && !n.data.crop) get().patchItem(id, { crop: [0.5, 0.5] });
+      },
+
+      patchItem: (id, patch, size) =>
+        set((s) => ({
+          nodes: s.nodes.map((n) => {
+            if (n.id !== id) return n;
+            const data = { ...n.data, ...patch };
+            for (const k of Object.keys(patch) as (keyof ItemData)[]) if (patch[k] === undefined) delete data[k];
+            return size ? { ...n, ...size, data } : { ...n, data };
+          }),
+        })),
+
+      stickArrowEnd: (id, end, itemId) => {
+        const key = end === "start" ? "startId" : "endId";
+        set((s) => {
+          const nodes = s.nodes.map((n) => {
+            if (n.id !== id) return n;
+            const data = { ...n.data };
+            if (itemId) data[key] = itemId;
+            else delete data[key];
+            return { ...n, data };
+          });
+          return { nodes: itemId ? followItems(nodes, new Set([itemId])) : nodes };
         });
       },
 
@@ -935,9 +1007,7 @@ export function createBoardStore() {
         const bounds = rectsBounds(all.map(rectOf));
         if (items.length < 2 || !bounds) return;
         const moves = arrangePositions(items.map((n) => ({ id: n.id, ...rectOf(n) })), bounds, mode);
-        record(() =>
-          set((s) => ({ nodes: s.nodes.map((n) => (moves.has(n.id) ? { ...n, position: moves.get(n.id)! } : n)) })),
-        );
+        record(() => set((s) => ({ nodes: moveItems(s.nodes, moves) })));
       },
 
       replaceContent: (nodes, edges) => {
@@ -958,11 +1028,12 @@ export function createBoardStore() {
       nudgeSelection: (dx, dy) => {
         if (!get().nodes.some((n) => n.selected)) return;
         record(() =>
-          set((s) => ({
-            nodes: s.nodes.map((n) =>
-              n.selected && !n.data.locked ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n,
-            ),
-          })),
+          set((s) => {
+            const moves = new Map(
+              s.nodes.filter((n) => n.selected && !n.data.locked).map((n) => [n.id, { x: n.position.x + dx, y: n.position.y + dy }]),
+            );
+            return { nodes: moveItems(s.nodes, moves) };
+          }),
         );
       },
 
@@ -996,8 +1067,22 @@ export function createBoardStore() {
           const g = clean.data.group;
           if (g && !groupMap.has(g)) groupMap.set(g, nanoid(8));
           if (g) clean.data = { ...clean.data, group: groupMap.get(g) };
+          // Arrow ends stay stuck only to items that were copied with them.
+          for (const key of ["startId", "endId"] as const) {
+            const target = clean.data[key];
+            if (!target) continue;
+            const data = { ...clean.data };
+            if (clip.nodes.some((c) => c.id === target)) data[key] = `@${target}`;
+            else delete data[key];
+            clean.data = data;
+          }
           return decorate({ ...clean, id, selected: true, position: { x: n.position.x + dx, y: n.position.y + dy } });
         });
+        for (const n of nodes)
+          for (const key of ["startId", "endId"] as const) {
+            const v = n.data[key];
+            if (v?.startsWith("@")) n.data = { ...n.data, [key]: idMap.get(v.slice(1)) };
+          }
         const links = clip.links
           .filter((e) => idMap.has(e.source) && idMap.has(e.target))
           .map((e) => ({ ...cleanEdge(e), id: nanoid(10), source: idMap.get(e.source)!, target: idMap.get(e.target)! }));

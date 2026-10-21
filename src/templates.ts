@@ -1,14 +1,30 @@
+import { nanoid } from "nanoid";
 import type { Point } from "./geometry";
+import { newBoardId, saveTemplate } from "./persistence";
 import { makeItem, makeLink } from "./store";
-import type { BoardBackground, BoardNode, ItemData, ItemType, LinkData, LinkEdge } from "./types";
+import type { BoardBackground, BoardNode, BoardStyle, ItemData, ItemType, LinkData, LinkEdge } from "./types";
 
 export type Template = {
   id: string;
   name: string;
   description: string;
   background: BoardBackground;
+  style?: BoardStyle;
+  /** Set for templates you saved yourself. */
+  customId?: string;
   build: () => { nodes: BoardNode[]; edges: LinkEdge[] };
 };
+
+/** One of your saved boards, offered as a starting point. */
+export const customTemplate = (doc: { id: string; title: string; background: BoardBackground; style: BoardStyle; nodes: BoardNode[]; edges: LinkEdge[] }): Template => ({
+  id: `custom:${doc.id}`,
+  customId: doc.id,
+  name: doc.title,
+  description: "Your template",
+  background: doc.background,
+  style: doc.style,
+  build: () => cloneContent(doc.nodes, doc.edges),
+});
 
 /** Small helper for laying out template content. */
 function board() {
@@ -168,4 +184,31 @@ export function welcomeBoard() {
   b.add("note", { x: 950, y: 360 }, { text: "Sections like these become slides: press **⇧⌘P** to present them.", color: "purple" }, { width: 360 });
   b.add("note", { x: 950, y: 460 }, { text: "Done exploring? Delete this board from the home screen any time.", color: "purple" }, { width: 360 });
   return b;
+}
+
+/**
+ * A fresh copy of a board's content: new ids throughout, with links, groups and stuck
+ * arrows pointing at the copies. Used for custom templates.
+ */
+export function cloneContent(nodes: BoardNode[], edges: LinkEdge[]) {
+  const ids = new Map(nodes.map((n) => [n.id, nanoid(10)]));
+  const groups = new Map<string, string>();
+  const copy = nodes.map((n) => {
+    const data = { ...n.data };
+    if (data.group) data.group = groups.get(data.group) ?? groups.set(data.group, nanoid(8)).get(data.group)!;
+    for (const k of ["startId", "endId"] as const) if (data[k]) data[k] = ids.get(data[k]!);
+    delete data.collapsed;
+    return { ...n, id: ids.get(n.id)!, selected: false, data };
+  });
+  const links = edges
+    .filter((e) => ids.has(e.source) && ids.has(e.target))
+    .map((e) => ({ ...e, id: nanoid(10), source: ids.get(e.source)!, target: ids.get(e.target)!, selected: false }));
+  return { nodes: copy, edges: links };
+}
+
+/** Save a copy of a board as one of your templates. */
+export async function saveAsTemplate(doc: { title: string; background: BoardBackground; style: BoardStyle; nodes: BoardNode[]; edges: LinkEdge[] }) {
+  const now = Date.now();
+  const content = cloneContent(doc.nodes, doc.edges);
+  await saveTemplate({ id: newBoardId(), title: doc.title, createdAt: now, updatedAt: now, pinned: false, background: doc.background, style: doc.style, viewport: null, ...content });
 }

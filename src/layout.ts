@@ -38,6 +38,8 @@ export function defaultSize(type: ItemType, shape?: ShapeKind): { width: number;
       return { width: 320, height: 240 };
     case "board":
       return { width: 260, height: 96 };
+    case "file":
+      return { width: 260, height: 70 };
     case "arrow":
       return { width: 100, height: 40 };
     default:
@@ -59,6 +61,8 @@ export const rectOf = (n: BoardNode): Rect => ({
 export function decorate(n: BoardNode): BoardNode {
   const out: BoardNode = { ...n };
   if (n.type === "frame") out.zIndex = -1;
+  // Lines and drawings are clickable only where they're drawn, not across their whole box.
+  if (n.type === "arrow" || n.type === "ink") out.style = { ...n.style, pointerEvents: "none" };
   out.draggable = !n.data.locked;
   if (AUTO_HEIGHT.has(n.type)) {
     out.initialHeight = n.initialHeight ?? n.height ?? NEW_NOTE_HEIGHT;
@@ -95,4 +99,28 @@ export function freeSpot(from: Rect, side: Position, others: Rect[]): Point {
 export function itemsInFrame(frame: BoardNode, nodes: BoardNode[]): string[] {
   const r = rectOf(frame);
   return nodes.filter((n) => n.id !== frame.id && containsPoint(r, center(rectOf(n)))).map((n) => n.id);
+}
+
+/**
+ * The item to move to from `from` when pressing an arrow key: the nearest one in that
+ * direction, preferring items roughly in line over ones far off to the side.
+ */
+export function nearestInDirection(from: Rect, others: (Rect & { id: string })[], dir: "left" | "right" | "up" | "down"): string | null {
+  const c = center(from);
+  let best: string | null = null;
+  let bestScore = Infinity;
+  for (const o of others) {
+    const p = center(o);
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+    const along = dir === "left" ? -dx : dir === "right" ? dx : dir === "up" ? -dy : dy;
+    const across = dir === "left" || dir === "right" ? Math.abs(dy) : Math.abs(dx);
+    if (along <= 1) continue;
+    const score = along + across * 2;
+    if (score < bestScore) {
+      bestScore = score;
+      best = o.id;
+    }
+  }
+  return best;
 }

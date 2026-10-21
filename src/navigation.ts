@@ -1,7 +1,7 @@
 import { createStore, useStore } from "zustand";
 import { listBoards, newBoardId, writeBoard } from "./persistence";
 import type { BoardDoc } from "./store";
-import type { BoardBackground, BoardNode, LinkEdge } from "./types";
+import type { BoardBackground, BoardNode, BoardStyle, LinkEdge } from "./types";
 
 /** Every saved board, kept for board cards, links, backlinks and the command palette. */
 const indexStore = createStore<{ boards: BoardDoc[]; loaded: boolean }>()(() => ({ boards: [], loaded: false }));
@@ -30,7 +30,7 @@ export function findBoardByTitle(title: string): BoardDoc | undefined {
 
 export function makeBoardDoc(
   title: string,
-  content?: { nodes?: BoardNode[]; edges?: LinkEdge[]; background?: BoardBackground },
+  content?: { nodes?: BoardNode[]; edges?: LinkEdge[]; background?: BoardBackground; style?: BoardStyle },
 ): BoardDoc {
   const now = Date.now();
   return {
@@ -40,7 +40,7 @@ export function makeBoardDoc(
     updatedAt: now,
     pinned: false,
     background: content?.background ?? "dots",
-    style: "clean",
+    style: content?.style ?? "clean",
     viewport: null,
     nodes: content?.nodes ?? [],
     edges: content?.edges ?? [],
@@ -87,3 +87,72 @@ export async function openBoardByTitle(title: string): Promise<void> {
   const doc = await createBoard(makeBoardDoc(name));
   return navigate(doc.id);
 }
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Text with every [[old]] link (any capitalisation) changed to [[new]]. */
+export function retitleText(text: string, oldTitle: string, newTitle: string): string {
+  return text.replace(new RegExp(`\\[\\[\\s*${escapeRe(oldTitle.trim())}\\s*\\]\\]`, "gi"), `[[${newTitle.trim()}]]`);
+}
+
+/**
+ * After a board is renamed, point every [[Old name]] link on other boards at the new name,
+ * so the links keep working. Skipped if another board still has the old name.
+ * Returns how many boards were updated.
+ */
+export async function renameLinks(oldTitle: string, newTitle: string, boardId: string): Promise<number> {
+  if (!oldTitle.trim() || oldTitle.trim().toLocaleLowerCase() === newTitle.trim().toLocaleLowerCase()) return 0;
+  if (!indexStore.getState().loaded) await refreshBoardIndex();
+  const boards = boardIndex();
+  if (boards.some((b) => b.id !== boardId && sameTitle(b.title, oldTitle))) return 0;
+  let changed = 0;
+  for (const b of boards) {
+    if (b.id === boardId) continue;
+    let touched = false;
+    const nodes = b.nodes.map((n) => {
+      const text = retitleText(n.data.text, oldTitle, newTitle);
+      const title = n.data.title === undefined ? undefined : retitleText(n.data.title, oldTitle, newTitle);
+      if (text === n.data.text && title === n.data.title) return n;
+      touched = true;
+      return { ...n, data: { ...n.data, text, ...(title === undefined ? {} : { title }) } };
+    });
+    if (!touched) continue;
+    const doc = { ...b, nodes, updatedAt: Date.now() };
+    try {
+      await writeBoard(doc, b.updatedAt);
+      updateIndexedBoard(doc);
+      changed++;
+    } catch (err) {
+      console.error(`Couldn't update links on “${b.title}”`, err);
+    }
+  }
+  return changed;
+}
+
+// ---------- Tags and jumping to a note ----------
+
+/** #tags in a piece of text (lower-case, without the #). */
+export function tagsIn(text: string): string[] {
+  return [...text.matchAll(/(?<![\w#/&])#([A-Za-z][\w-]{0,40})/g)].map((m) => m[1].toLowerCase());
+}
+
+let pendingFocus: string | null = null;
+/** Ask the next board that opens to select and zoom to this item. */
+export const focusOnOpen = (itemId: string | null) => {
+  pendingFocus = itemId;
+};
+/** The item the board just opened should show, if any (asked once). */
+export const takePendingFocus = () => {
+  const id = pendingFocus;
+  pendingFocus = null;
+  return id;
+};
+
+/** Open a board and show one of its items. */
+export async function openBoardAt(boardId: string, itemId: string) {
+  focusOnOpen(itemId);
+  await navigate(boardId);
+}
+
+/** Ask the open board to find something (e.g. when a #tag is clicked). */
+export const findOnBoard = (query: string) => window.dispatchEvent(new CustomEvent("mythra:find", { detail: query }));

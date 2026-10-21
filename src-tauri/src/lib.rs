@@ -8,6 +8,7 @@ use storage::Storage;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 type Store<'a> = tauri::State<'a, RwLock<Storage>>;
 
@@ -134,11 +135,82 @@ fn restore_board(store: Store, id: String) -> Result<(), String> {
     store.read().unwrap().restore(&id).map_err(err)
 }
 
-/// Image bytes arrive as the raw request body, with the file name in a header.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrashedBoard {
+    id: String,
+    json: String,
+    deleted_at: u64,
+}
+
+#[tauri::command]
+fn list_trash(store: Store) -> Result<Vec<TrashedBoard>, String> {
+    let boards = store.read().unwrap().list_trash().map_err(err)?;
+    Ok(boards.into_iter().map(|(id, json, deleted_at)| TrashedBoard { id, json, deleted_at }).collect())
+}
+
+#[tauri::command]
+fn delete_board_forever(store: Store, id: String) -> Result<(), String> {
+    store.read().unwrap().delete_forever(&id).map_err(err)
+}
+
+const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+/// Boards stay in the trash this long before being removed for good.
+const TRASH_DAYS: u64 = 30;
+/// Unused attached files are only removed once they are at least this old.
+const ASSET_MIN_AGE_MS: u64 = DAY_MS;
+
+/// Permanently remove boards trashed more than `days` ago. Returns how many.
+#[tauri::command]
+fn purge_trash(store: Store, days: u64) -> Result<usize, String> {
+    store.read().unwrap().purge_trash(days.saturating_mul(DAY_MS)).map_err(err)
+}
+
+#[tauri::command]
+fn list_templates(store: Store) -> Result<Vec<BoardFile>, String> {
+    let templates = store.read().unwrap().list_templates().map_err(err)?;
+    Ok(templates.into_iter().map(|(id, json)| BoardFile { id, json }).collect())
+}
+
+#[tauri::command]
+fn save_template(store: Store, id: String, json: String) -> Result<(), String> {
+    store.read().unwrap().save_template(&id, &json).map_err(err)
+}
+
+#[tauri::command]
+fn delete_template(store: Store, id: String) -> Result<(), String> {
+    store.read().unwrap().delete_template(&id).map_err(err)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CleanupReport {
+    files: usize,
+    bytes: u64,
+}
+
+/// Delete attached files no board uses any more.
+#[tauri::command]
+fn cleanup_assets(store: Store) -> Result<CleanupReport, String> {
+    let (files, bytes) = store.read().unwrap().cleanup_assets(ASSET_MIN_AGE_MS).map_err(err)?;
+    Ok(CleanupReport { files, bytes })
+}
+
+/// Open an attached file in the app the system uses for it.
+#[tauri::command]
+fn open_asset(app: tauri::AppHandle, store: Store, name: String) -> Result<(), String> {
+    let path = store.read().unwrap().asset_path(&name).map_err(err)?;
+    if !path.is_file() {
+        return Err("That file is missing".into());
+    }
+    app.opener().open_path(path.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+}
+
+/// File bytes arrive as the raw request body, with the file name in a header.
 #[tauri::command]
 fn save_asset(store: Store, request: Request) -> Result<(), String> {
     let InvokeBody::Raw(bytes) = request.body() else {
-        return Err("expected image bytes".into());
+        return Err("expected file bytes".into());
     };
     let name = request
         .headers()
@@ -266,7 +338,11 @@ pub fn run() {
                 Some(dir) if dir.is_dir() => dir,
                 _ => app.path().app_data_dir()?,
             };
-            app.manage(RwLock::new(Storage::new(&root)));
+            let store = Storage::new(&root);
+            // Tidying up is a bonus; a failure here must never stop the app opening.
+            let _ = store.purge_trash(TRASH_DAYS * DAY_MS);
+            let _ = store.cleanup_assets(ASSET_MIN_AGE_MS);
+            app.manage(RwLock::new(store));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -275,8 +351,16 @@ pub fn run() {
             save_board,
             trash_board,
             restore_board,
+            list_trash,
+            delete_board_forever,
+            purge_trash,
+            list_templates,
+            save_template,
+            delete_template,
             save_asset,
             load_asset,
+            open_asset,
+            cleanup_assets,
             export_file,
             open_board_file,
             copy_image,

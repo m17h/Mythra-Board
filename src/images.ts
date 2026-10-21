@@ -41,9 +41,11 @@ async function storeImage(file: File): Promise<{ name: string; width: number; he
 }
 
 /** Add image files to the board, centred on `at` and fanned out if there are several. */
-export async function addImages(files: File[], at: Point): Promise<void> {
+/** Adds pictures fanned out from `at`; returns the lowest edge they reach. */
+export async function addImages(files: File[], at: Point): Promise<number> {
   const images = files.filter(isImageFile);
   let i = 0;
+  let bottom = at.y;
   for (const file of images) {
     try {
       const { name, width, height } = await storeImage(file);
@@ -54,11 +56,13 @@ export async function addImages(files: File[], at: Point): Promise<void> {
         { x: at.x - w / 2 + i * 30, y: at.y - h / 2 + i * 30 },
         { width: w, height: h, data: { asset: name } },
       );
+      bottom = Math.max(bottom, at.y - h / 2 + i * 30 + h);
       i++;
     } catch (err) {
       console.error("Could not add image", err);
     }
   }
+  return bottom;
 }
 
 const URL_RE = /^(https?:\/\/)[^\s]+$/i;
@@ -72,4 +76,58 @@ export function hostOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+/** File types that can be dropped on a board as file cards (images become pictures). */
+export const FILE_EXTENSIONS = [
+  "pdf", "txt", "md", "csv", "json", "rtf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+  "key", "pages", "numbers", "zip", "mp3", "m4a", "wav", "mp4", "mov",
+];
+const MAX_FILE_BYTES = 200 * 1024 * 1024;
+
+const extOf = (name: string) => name.split(".").pop()?.toLowerCase() ?? "";
+export const isAttachable = (f: File) => isImageFile(f) || FILE_EXTENSIONS.includes(extOf(f.name));
+
+/**
+ * Add dropped or picked files: pictures become images, documents become file cards.
+ * Returns a message about anything that couldn't be added.
+ */
+export async function addFiles(files: File[], at: Point): Promise<string | null> {
+  const images = files.filter(isImageFile);
+  const others = files.filter((f) => !isImageFile(f));
+  const problems: string[] = [];
+  // Files go in a column underneath any pictures, so nothing lands on top of anything else.
+  const top = images.length ? (await addImages(images, at)) + 30 : at.y - 35;
+  let i = 0;
+  for (const file of others) {
+    const ext = extOf(file.name);
+    if (!FILE_EXTENSIONS.includes(ext)) {
+      problems.push(`${file.name} (this kind of file isn't supported)`);
+      continue;
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      problems.push(`${file.name} (larger than 200 MB)`);
+      continue;
+    }
+    try {
+      const name = `${nanoid(14).replace(/[^A-Za-z0-9_-]/g, "_")}.${ext}`;
+      await saveAsset(name, new Uint8Array(await file.arrayBuffer()));
+      boardStore.getState().addItem(
+        "file",
+        { x: at.x - 130, y: top + i * 90 },
+        { data: { asset: name, text: file.name, fileSize: file.size } },
+      );
+      i++;
+    } catch (err) {
+      console.error("Couldn't add file", err);
+      problems.push(file.name);
+    }
+  }
+  return problems.length ? `Couldn't add ${problems.join(", ")}` : null;
+}
+
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }

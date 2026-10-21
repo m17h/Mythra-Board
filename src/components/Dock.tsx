@@ -18,10 +18,21 @@ import {
 import { ShapeGlyph } from "../shapes";
 import { ShapePicker, Swatches, ToolButton } from "./Toolbars";
 
-function ToolSwitch({ tool, label, children }: { tool: Tool; label: string; children: ReactNode }) {
-  const active = useBoard((s) => s.tool === tool);
+/**
+ * A dock button for a tool, or a family of tools (Select/Lasso, Pen/Eraser). Clicking an
+ * active family cycles through it; clicking any other active tool goes back to Select.
+ */
+function ToolSwitch({ tool, family, label, children }: { tool: Tool; family?: Tool[]; label: string; children: ReactNode }) {
+  const current = useBoard((s) => s.tool);
+  const tools = family ?? [tool];
+  const active = tools.includes(current);
+  const next = () => {
+    if (!active) return tool;
+    if (tools.length > 1) return tools[(tools.indexOf(current) + 1) % tools.length];
+    return "select";
+  };
   return (
-    <ToolButton label={label} active={active} onClick={() => boardStore.getState().setTool(active ? "select" : tool)}>
+    <ToolButton label={label} active={active} onClick={() => boardStore.getState().setTool(next())}>
       {children}
     </ToolButton>
   );
@@ -71,16 +82,42 @@ function ToolOptions() {
       </div>
     );
   }
-  if (tool === "pen") {
+  if (tool === "pen" || tool === "eraser") {
     return (
       <div className="dock dock--options" role="toolbar" aria-label="Pen">
-        <Swatches value={penColor} strong onPick={(color) => store.setPen({ color })} />
+        <ToolButton label="Pen (P)" active={tool === "pen"} onClick={() => store.setTool("pen")}>
+          <PenIcon />
+        </ToolButton>
+        <ToolButton label="Eraser (E)" active={tool === "eraser"} onClick={() => store.setTool("eraser")}>
+          <EraserIcon />
+        </ToolButton>
         <span className="bar-divider" />
-        {SIZES.map((s) => (
-          <ToolButton key={s} label={PEN_SIZE_NAMES[s]} active={penSize === s} onClick={() => store.setPen({ size: s })}>
-            <span className={`pen-dot pen-dot--${s}`} />
-          </ToolButton>
-        ))}
+        {tool === "pen" ? (
+          <>
+            <Swatches value={penColor} strong onPick={(color) => store.setPen({ color })} />
+            <span className="bar-divider" />
+            {SIZES.map((s) => (
+              <ToolButton key={s} label={PEN_SIZE_NAMES[s]} active={penSize === s} onClick={() => store.setPen({ size: s })}>
+                <span className={`pen-dot pen-dot--${s}`} />
+              </ToolButton>
+            ))}
+          </>
+        ) : (
+          <span className="dock-hint">Drag over pen strokes to erase them</span>
+        )}
+      </div>
+    );
+  }
+  if (tool === "lasso") {
+    return (
+      <div className="dock dock--options" role="toolbar" aria-label="Selecting">
+        <ToolButton label="Box select (V)" onClick={() => store.setTool("select")}>
+          <CursorIcon />
+        </ToolButton>
+        <ToolButton label="Lasso select (L)" active onClick={() => store.setTool("lasso")}>
+          <LassoIcon />
+        </ToolButton>
+        <span className="dock-hint">Draw a loop around the items you want to select</span>
       </div>
     );
   }
@@ -88,8 +125,6 @@ function ToolOptions() {
     note: "Click anywhere to add a note",
     text: "Click anywhere to add text",
     frame: "Click to place a section, or drag to size it",
-    eraser: "Drag over pen strokes to erase them",
-    lasso: "Draw a loop around the items you want to select",
   };
   const hint = hints[tool];
   return hint ? (
@@ -101,15 +136,13 @@ function ToolOptions() {
 
 export function Dock({ onPickImage }: { onPickImage: () => void }) {
   const shapeKind = useBoard((s) => s.shapeKind);
+  const tool = useBoard((s) => s.tool);
   return (
     <div className="dock-stack">
       <ToolOptions />
       <div className="dock" role="toolbar" aria-label="Tools">
-        <ToolSwitch tool="select" label="Select (V)">
-          <CursorIcon />
-        </ToolSwitch>
-        <ToolSwitch tool="lasso" label="Lasso select (L)">
-          <LassoIcon />
+        <ToolSwitch tool="select" family={["select", "lasso"]} label="Select (V) · click again for lasso (L)">
+          {tool === "lasso" ? <LassoIcon /> : <CursorIcon />}
         </ToolSwitch>
         <ToolSwitch tool="hand" label="Pan (H, or hold Space)">
           <HandIcon />
@@ -131,14 +164,11 @@ export function Dock({ onPickImage }: { onPickImage: () => void }) {
           <ArrowToolIcon />
         </ToolSwitch>
         <span className="bar-divider" />
-        <ToolSwitch tool="pen" label="Pen (P)">
-          <PenIcon />
-        </ToolSwitch>
-        <ToolSwitch tool="eraser" label="Eraser (E)">
-          <EraserIcon />
+        <ToolSwitch tool="pen" family={["pen", "eraser"]} label="Pen (P) · eraser (E)">
+          {tool === "eraser" ? <EraserIcon /> : <PenIcon />}
         </ToolSwitch>
         <span className="bar-divider" />
-        <ToolButton label="Image (I)" onClick={onPickImage}>
+        <ToolButton label="Picture or file (I)" onClick={onPickImage}>
           <ImageIcon />
         </ToolButton>
       </div>

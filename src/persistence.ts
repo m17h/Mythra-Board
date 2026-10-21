@@ -53,6 +53,10 @@ type SavedItem = {
   locked?: boolean;
   group?: string;
   fill?: string;
+  startId?: string;
+  endId?: string;
+  fileSize?: number;
+  crop?: number[];
 };
 type SavedLink = { id: string; from: string; to: string; label: string; curve: string; arrow: string; dash: string };
 type SavedBoard = {
@@ -125,6 +129,10 @@ export function toSaved(doc: BoardDoc): SavedBoard {
       if (n.data.locked) item.locked = true;
       if (n.data.group) item.group = n.data.group;
       if (n.data.fill) item.fill = n.data.fill;
+      if (n.data.startId) item.startId = n.data.startId;
+      if (n.data.endId) item.endId = n.data.endId;
+      if (n.data.fileSize) item.fileSize = n.data.fileSize;
+      if (n.data.crop) item.crop = n.data.crop;
       return item;
     }),
     links: doc.edges.map(cleanEdge).map((e) => ({
@@ -160,7 +168,7 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     const id = str(it?.id);
     const type = oneOf(it?.type, ITEM_TYPES, "note");
     if (!id || seen.has(id)) continue;
-    if (type === "image" && !str(it.asset)) continue;
+    if ((type === "image" || type === "file") && !str(it.asset)) continue;
     if (type === "ink" && !(Array.isArray(it.points) && it.points.every((p) => typeof p === "number"))) continue;
     if (type === "arrow" && !(Array.isArray(it.ends) && it.ends.length === 4 && it.ends.every((p) => Number.isFinite(p)))) continue;
     if (type === "board" && !str(it.boardId)) continue;
@@ -175,7 +183,10 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (AUTO_HEIGHT.has(type)) node.initialHeight = it.h ? clampSize(it.h, 50) : undefined;
     else node.height = clampSize(it.h, 100);
     if (type === "shape") node.data.shape = oneOf(it.shape, SHAPES, "rect");
-    if (type === "image") node.data.asset = str(it.asset);
+    if (type === "image" || type === "file") node.data.asset = str(it.asset);
+    if (type === "file" && num(it.fileSize, 0) > 0) node.data.fileSize = num(it.fileSize, 0);
+    if (type === "image" && Array.isArray(it.crop) && it.crop.length === 2 && it.crop.every((v) => Number.isFinite(v)))
+      node.data.crop = [Math.min(1, Math.max(0, it.crop[0])), Math.min(1, Math.max(0, it.crop[1]))];
     if (type === "ink") node.data.points = it.points;
     if (type === "link") node.data.url = str(it.url);
     if (type === "note" && typeof it.title === "string") node.data.title = it.title;
@@ -192,6 +203,8 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (type === "arrow") {
       node.data.ends = it.ends as [number, number, number, number];
       node.data.arrowHead = oneOf(it.arrowHead, ["none", "end", "both"] as const, "end");
+      if (str(it.startId)) node.data.startId = str(it.startId);
+      if (str(it.endId)) node.data.endId = str(it.endId);
     }
     nodes.push(node);
   }
@@ -278,19 +291,106 @@ export async function writeBoard(doc: BoardDoc, expected?: number): Promise<bool
   return false;
 }
 
-const localTrash = new Map<string, string>();
+// ---------- Recently deleted ----------
+
+const LOCAL_TRASH = "mythra-board:trash:";
+const TRASH_DAYS = 30;
+export const TRASH_KEEP_DAYS = TRASH_DAYS;
+
+export type TrashedBoard = { doc: BoardDoc; deletedAt: number };
 
 export async function trashBoard(id: string): Promise<void> {
   if (isTauri()) return invoke("trash_board", { id });
   const json = localStorage.getItem(LOCAL_PREFIX + id);
-  if (json) localTrash.set(id, json);
+  if (json) localStorage.setItem(LOCAL_TRASH + id, JSON.stringify({ json, deletedAt: Date.now() }));
   localStorage.removeItem(LOCAL_PREFIX + id);
 }
 
 export async function restoreBoard(id: string): Promise<void> {
   if (isTauri()) return invoke("restore_board", { id });
-  const json = localTrash.get(id);
-  if (json) localStorage.setItem(LOCAL_PREFIX + id, json);
+  const entry = localStorage.getItem(LOCAL_TRASH + id);
+  if (entry) localStorage.setItem(LOCAL_PREFIX + id, JSON.parse(entry).json);
+  localStorage.removeItem(LOCAL_TRASH + id);
+}
+
+/** Deleted boards, newest first. Boards deleted over 30 days ago are removed for good. */
+export async function listTrash(): Promise<TrashedBoard[]> {
+  let raw: { id: string; json: string; deletedAt: number }[];
+  if (isTauri()) raw = await invoke("list_trash");
+  else {
+    raw = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)!;
+      if (!key.startsWith(LOCAL_TRASH)) continue;
+      try {
+        const { json, deletedAt } = JSON.parse(localStorage.getItem(key)!);
+        raw.push({ id: key.slice(LOCAL_TRASH.length), json, deletedAt });
+      } catch {
+        // Skip anything unreadable.
+      }
+    }
+    const cutoff = Date.now() - TRASH_DAYS * 86_400_000;
+    for (const r of raw.filter((r) => r.deletedAt < cutoff)) localStorage.removeItem(LOCAL_TRASH + r.id);
+    raw = raw.filter((r) => r.deletedAt >= cutoff);
+  }
+  const out: TrashedBoard[] = [];
+  for (const r of raw) {
+    try {
+      out.push({ doc: { ...fromSaved(JSON.parse(r.json), r.id), id: r.id }, deletedAt: r.deletedAt });
+    } catch {
+      // Skip anything unreadable.
+    }
+  }
+  return out.sort((a, b) => b.deletedAt - a.deletedAt);
+}
+
+/** Remove a deleted board (and its version history) for good. */
+export async function deleteForever(id: string): Promise<void> {
+  if (isTauri()) return invoke("delete_board_forever", { id });
+  localStorage.removeItem(LOCAL_TRASH + id);
+  localStorage.removeItem(LOCAL_HISTORY + id);
+}
+
+// ---------- Your templates ----------
+
+const LOCAL_TEMPLATE = "mythra-board:template:";
+
+export async function listTemplates(): Promise<BoardDoc[]> {
+  let files: { id: string; json: string }[];
+  if (isTauri()) files = await invoke("list_templates");
+  else {
+    files = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)!;
+      if (key.startsWith(LOCAL_TEMPLATE)) files.push({ id: key.slice(LOCAL_TEMPLATE.length), json: localStorage.getItem(key)! });
+    }
+  }
+  const out: BoardDoc[] = [];
+  for (const f of files) {
+    try {
+      out.push({ ...fromSaved(JSON.parse(f.json), f.id), id: f.id });
+    } catch {
+      // Skip anything unreadable.
+    }
+  }
+  return out.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export async function saveTemplate(doc: BoardDoc): Promise<void> {
+  const json = JSON.stringify(toSaved(doc));
+  if (isTauri()) return invoke("save_template", { id: doc.id, json });
+  localStorage.setItem(LOCAL_TEMPLATE + doc.id, json);
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  if (isTauri()) return invoke("delete_template", { id });
+  localStorage.removeItem(LOCAL_TEMPLATE + id);
+}
+
+/** Remove pictures and files that no board, deleted board, version or template uses. */
+export async function cleanupFiles(): Promise<{ files: number; bytes: number }> {
+  if (!isTauri()) return { files: 0, bytes: 0 };
+  return invoke("cleanup_assets");
 }
 
 // ---------- Images ----------
@@ -585,4 +685,19 @@ export async function loadAssetBytes(name: string): Promise<Uint8Array> {
   const bytes = await idbRun<Uint8Array | undefined>("readonly", (s) => s.get(name));
   if (!bytes) throw new Error(`Missing image ${name}`);
   return bytes;
+}
+
+/** Open an attached file in the app it belongs to (Preview for PDFs, and so on). */
+export async function openAsset(name: string, fileName: string): Promise<void> {
+  if (isTauri()) {
+    await invoke("open_asset", { name });
+    return;
+  }
+  const bytes = await loadAssetBytes(name);
+  const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>]));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
