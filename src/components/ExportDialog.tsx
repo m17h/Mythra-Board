@@ -17,10 +17,18 @@ const FORMATS: [Format, string, string][] = [
 const nextFrames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
 /** Export the board (or just the selection) as a picture, PDF or board file. */
-export function ExportDialog({ onClose, onNotice }: { onClose: () => void; onNotice: (message: string | null) => void }) {
+export function ExportDialog({
+  onClose,
+  onNotice,
+  initialFormat = "png",
+}: {
+  onClose: () => void;
+  onNotice: (message: string | null) => void;
+  initialFormat?: Format;
+}) {
   const s = boardStore.getState();
   const selectedCount = s.nodes.filter((n) => n.selected).length;
-  const [format, setFormat] = useState<Format>("png");
+  const [format, setFormat] = useState<Format>(initialFormat);
   const [scope, setScope] = useState<"board" | "selection">(selectedCount ? "selection" : "board");
   const [background, setBackground] = useState(true);
   const [busy, setBusy] = useState(false);

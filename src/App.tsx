@@ -2,8 +2,20 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import BoardView from "./BoardView";
 import Home from "./Home";
-import { setNavigator, updateIndexedBoard } from "./navigation";
-import { closeEditor, currentDoc, loadBoard, onSaveStatus, openInEditor, saveOnQuit, type SaveStatus } from "./persistence";
+import { importBoardFile } from "./boardFile";
+import { listenToMenu, onMenu } from "./menuEvents";
+import { createBoard, makeBoardDoc, setNavigator, updateIndexedBoard } from "./navigation";
+import { setThemeSetting, type ThemeSetting } from "./theme";
+import {
+  closeEditor,
+  currentDoc,
+  loadBoard,
+  onSaveStatus,
+  openInEditor,
+  pickBoardFile,
+  saveOnQuit,
+  type SaveStatus,
+} from "./persistence";
 import { boardStore, type BoardDoc } from "./store";
 
 type Screen = { name: "home" } | { name: "board"; id: string };
@@ -20,6 +32,7 @@ export default function App() {
   useEffect(() => {
     onSaveStatus(setStatus);
     void saveOnQuit();
+    void listenToMenu();
   }, []);
 
   /** Save the open board and keep the board index in step with it. */
@@ -71,6 +84,37 @@ export default function App() {
     setTrail([]);
     setScreen({ name: "home" });
   }, [leaveBoard]);
+
+  // Menu items that work anywhere in the app.
+  useEffect(
+    () =>
+      onMenu((id) => {
+        if (id.startsWith("theme-")) {
+          setThemeSetting(id.slice(6) as ThemeSetting);
+          return true;
+        }
+        if (id === "all-boards") {
+          void goHome();
+          return true;
+        }
+        if (id === "back") {
+          void goBack();
+          return true;
+        }
+        if (id === "new-board") {
+          void createBoard(makeBoardDoc("Untitled board")).then(open);
+          return true;
+        }
+        if (id === "open-file") {
+          void pickBoardFile()
+            .then((text) => (text ? importBoardFile(text).then(open) : undefined))
+            .catch((err) => console.error("Couldn't open that file", err));
+          return true;
+        }
+        return false;
+      }),
+    [goHome, goBack, open],
+  );
 
   if (screen.name === "home") return <Home onOpen={(doc) => void open(doc)} />;
   return (

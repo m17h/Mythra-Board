@@ -5,24 +5,25 @@ Built with [Tauri 2](https://tauri.app), React and [React Flow](https://reactflo
 
 ## Using it
 
-- The **home screen** lists your boards with live previews. Search (it looks inside notes too), sort, pin, rename, duplicate or delete (with Undo). Start new boards blank or from a template: Mind map, Brainstorm, Flowchart, Project plan, Pros & cons.
-- **Double-click** anywhere to add a note. Press **Esc** when you're done typing.
-- **Hover an item** to see four dots. **Drag a dot** onto another item to link them, or drop it on empty space to start a new linked note. **Click a dot** to add a linked note on that side. Links that share a side spread out so they never overlap.
-- **Tab** adds a linked note to the right (Shift-Tab: left), even while typing.
-- The **dock** at the bottom has: Note (N), Text (T), Shape (S: box, circle, diamond), Section (F), Pen (P), Eraser (E) and Image (I).
-- **Sections** group things: click anywhere in one to select it, drag it and everything inside moves along, double-click inside to add a note. Hold ⇧ and drag inside a section to box-select its contents. Select items and press ⌥⌘G to wrap them in a section; copying a section copies what's in it.
-- Items **snap** into line with each other while you drag (hold ⌥ to move freely, or turn it off in the board's ⋯ menu).
-- Select items to style them from the toolbar: **Colour**, **Outline** (thickness, solid or dashed, colour) and **Text** (Title / Heading / Subheading / Body / Caption for text blocks, size for notes and shapes, left/centre/right alignment, and an optional **card title** on notes).
-- **Appearance**: Auto (follows your Mac), Light, or a medium-gray Dark mode, from the home screen or a board's ⋯ menu.
-- **Right-click** anything for more options, including Bring to front / Send to back.
-- **Export as PNG** (⇧⌘E) saves a picture of the whole board.
-- Notes understand a little Markdown: `# heading`, `- bullet`, `- [ ] to-do` (tick it right on the board), `**bold**`, `*italic*`, and web addresses become clickable.
-- **Paste** text, images or a web address (which becomes a link card). You can also drag image files onto the board.
-- **Click a link** to change its shape, arrows, dashes or label. Press **?** for every shortcut, and **⌘[** to go back to all boards.
+**Boards and the home screen**
+- The home screen lists your boards with live previews: search (including inside notes), sort, pin, rename, duplicate, delete (with Undo), save as a `.mythra` board file, or open one (⌘O).
+- Start blank or from a template (Mind map, Brainstorm, Flowchart, Project plan, Pros & cons). The first launch opens a short Welcome tour.
+- **Settings** (⌘,): appearance (Auto / Light / medium-gray Dark), where boards are kept (this Mac, **iCloud Drive**, or any folder) and AI.
 
-Boards save automatically to `~/Library/Application Support/com.mythra.board/boards/`, one file per board.
-Each save is written safely (never half-written) and the previous version is kept as a backup.
-Deleted boards move to `trash/` there, and images are kept in `assets/`.
+**On a board**
+- **Double-click** to add a note; **Tab** while typing grows a linked note. Hover an item and drag one of its dots to link it, or drop on empty space for a new note.
+- Tools (bottom dock): Select (V), Lasso (L), Pan (H), Note (N), Text (T), Shape (S, eight kinds), Section (F), Arrow/line (A), Pen (P), Eraser (E), Image (I).
+- Select something to style it: **Colour** (with fill style), **Outline**, **Text** (Title → Caption styles, size, alignment, card titles), **Shape**, **Arrange** (align, space evenly, group), **Lock**, and **✨ AI**.
+- **Mind maps**: fold a branch (C) to hide its children, and "Tidy up" to lay branches out neatly.
+- **Link boards**: type `[[Board name]]` in a note, or add a board card (right-click → Link a board here). Boards show what links to them; **⌘[** goes back.
+- **⌘K** opens the command palette (every action and board); **⌘F** finds text on the board.
+- **Version history** keeps snapshots as you work; restore any of them (undoable).
+- **Export** (⇧⌘E): PNG, true-vector SVG, PDF or a board file — the whole board or just the selection — or copy as a picture.
+- **Present** (⇧⌘P) turns sections into full-screen slides, with a laser pointer (click and drag).
+- **Hand-drawn style** (board ⋯ menu) gives wobbly lines and handwriting.
+- **AI** (needs your Anthropic API key in Settings, stored in the Keychain): brainstorm ideas from a note, turn a note into a mind map, or summarise the board. The text involved is sent to Claude only when you use one of these.
+
+Boards save automatically. Each save is written safely with a backup; deleted boards go to `trash/`, pictures to `assets/`, snapshots to `history/`. If a synced board was changed on two Macs at once, the other copy is kept in Version history.
 
 ## Development
 
@@ -33,6 +34,7 @@ pnpm dev        # run in a browser at http://localhost:1420 (saves to browser st
 pnpm check      # type-check, unit tests, production build
 cargo test --manifest-path src-tauri/Cargo.toml   # save/load safety tests
 pnpm package    # build Mythra Board.app (and a .dmg)
+scripts/release-mac.sh   # signed .app + .dmg (notarised when APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are set)
 ```
 
 ## Layout
@@ -44,4 +46,6 @@ pnpm package    # build Mythra Board.app (and a .dmg)
 - `src/components/items.tsx` – notes, text, shapes, images, sections, pen strokes, link cards
 - `src/components/` – also links, toolbars, the dock and drawing gestures
 - `src/persistence.ts` – saving, loading and images (damaged data is skipped, never fatal)
-- `src-tauri/src/storage.rs` – atomic file writes, backups, trash and image storage
+- `src-tauri/src/storage.rs` – atomic file writes, backups, trash, history, images and moving folders
+- `src-tauri/src/ai.rs` – Claude requests (key kept in the Keychain); `src-tauri/src/menu.rs` – the menu bar
+- `.github/workflows/build.yml` – checks every push; builds macOS, Windows and Linux installers for version tags

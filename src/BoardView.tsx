@@ -19,6 +19,7 @@ import BoardDefs from "./components/BoardDefs";
 import { ExportDialog } from "./components/ExportDialog";
 import { Presentation } from "./components/Presentation";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { onMenu, typingNow } from "./menuEvents";
 import { setNotifier } from "./notify";
 import { isMac, keyLabel } from "./platform";
 import { FindBar } from "./components/FindBar";
@@ -131,7 +132,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
     setNotifier(setNotice);
   }, []);
 
-  const [exportOpen, setExportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState<false | "png" | "mythra">(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -148,7 +149,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
   }, []);
   const exportPng = useCallback(() => {
     boardStore.getState().stopEditing();
-    setExportOpen(true);
+    setExportOpen("png");
   }, []);
 
   useEffect(() => {
@@ -212,12 +213,61 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           run: () => boardStore.getState().setStyle(boardStore.getState().style === "sketchy" ? "clean" : "sketchy"),
         },
         { id: "board:history", group: "Board", label: "Version history…", icon: <HistoryIcon />, keywords: "restore undo backup", run: () => setHistoryOpen(true) },
-        { id: "board:file", group: "Board", label: "Save a board file…", icon: <FileIcon />, keywords: "backup share export mythra", run: () => setExportOpen(true) },
+        { id: "board:file", group: "Board", label: "Save a board file…", icon: <FileIcon />, keywords: "backup share export mythra", run: () => setExportOpen("mythra") },
       ],
     }),
     [viewCenter, pickImage, exportPng, onHome, back, onBack, present, boardStyle],
   );
   const commands = useBoardCommands(actions, palette);
+
+  // Menu bar choices that belong to the board.
+  useEffect(
+    () =>
+      onMenu((id) => {
+        const s = boardStore.getState();
+        const ids = s.nodes.filter((n) => n.selected).map((n) => n.id);
+        const anywhere: Record<string, () => void> = {
+          settings: () => setSettingsOpen(true),
+          export: exportPng,
+          "save-file": () => setExportOpen("mythra"),
+          history: () => setHistoryOpen(true),
+          find: () => setFindOpen(true),
+          palette: () => setPalette(true),
+          "zoom-in": () => void rf.zoomIn({ duration: 150 }),
+          "zoom-out": () => void rf.zoomOut({ duration: 150 }),
+          "zoom-reset": () => void rf.zoomTo(1, { duration: 200 }),
+          fit: () => void rf.fitView(FIT_OPTIONS),
+          minimap: () => setShowMap((v) => !v),
+          style: () => s.setStyle(s.style === "sketchy" ? "clean" : "sketchy"),
+          present,
+          shortcuts: () => setShowHelp((v) => !v),
+          "link-board": () => setPickerAt(viewCenter()),
+        };
+        // Edits to the selection stay out of the way while you're typing.
+        const edits: Record<string, () => void> = {
+          duplicate: () => s.duplicateSelection(),
+          delete: () => s.deleteSelection(),
+          group: () => s.group(ids),
+          ungroup: () => s.ungroup(ids),
+          section: () => void s.frameSelection(),
+          lock: () => s.setLocked(ids, !s.nodes.filter((n) => n.selected).every((n) => n.data.locked)),
+          front: () => s.reorder(ids, "front"),
+          "back-layer": () => s.reorder(ids, "back"),
+          tidy: () => void s.tidyUp(ids.length === 1 ? ids : undefined),
+          fold: () => ids.length === 1 && s.toggleCollapse(ids[0]),
+        };
+        if (anywhere[id]) {
+          anywhere[id]();
+          return true;
+        }
+        if (edits[id]) {
+          if (!typingNow()) edits[id]();
+          return true;
+        }
+        return false;
+      }),
+    [rf, exportPng, present, viewCenter],
+  );
 
   // Keep an item you've just started typing into on screen.
   useEffect(() => {
@@ -476,7 +526,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {presenting && <Presentation onExit={() => setPresenting(false)} />}
-      {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} onNotice={setNotice} />}
+      {exportOpen && <ExportDialog initialFormat={exportOpen} onClose={() => setExportOpen(false)} onNotice={setNotice} />}
       {historyOpen && <VersionHistory onClose={() => setHistoryOpen(false)} onNotice={setNotice} />}
       {menu && (
         <ContextMenu

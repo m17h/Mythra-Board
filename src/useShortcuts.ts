@@ -1,6 +1,7 @@
 import { Position, useReactFlow } from "@xyflow/react";
 import { useEffect, useRef, type RefObject } from "react";
 import { addImages, asUrl, isImageFile } from "./images";
+import { markKeyHandled } from "./menuEvents";
 import { boardStore, type Clip, type Tool } from "./store";
 import { DEFAULT_NOTE_WIDTH, type ArrangeMode } from "./types";
 
@@ -56,17 +57,20 @@ export function useShortcuts(options: Options) {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && !e.shiftKey && e.key === "[") {
         e.preventDefault();
+        markKeyHandled();
         opts.current.goHome();
         return;
       }
       if (mod && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        markKeyHandled();
         boardStore.getState().stopEditing();
         opts.current.openPalette();
         return;
       }
       if (mod && !e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
+        markKeyHandled();
         boardStore.getState().stopEditing();
         opts.current.openFind();
         return;
@@ -79,7 +83,10 @@ export function useShortcuts(options: Options) {
       if (s.editingId && !mod) return;
       const selected = s.nodes.filter((n) => n.selected);
       const links = s.edges.filter((x) => x.selected);
-      const handled = () => e.preventDefault();
+      const handled = () => {
+        e.preventDefault();
+        markKeyHandled();
+      };
 
       if (e.altKey && !e.metaKey && !(e.ctrlKey && e.code === "KeyG")) {
         // Option-key alignment, as in most design apps.

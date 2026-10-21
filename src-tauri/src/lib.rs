@@ -1,4 +1,5 @@
 mod ai;
+mod menu;
 mod storage;
 
 use std::path::PathBuf;
@@ -257,6 +258,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .menu(|app| menu::build(app))
+        .on_menu_event(|app, event| menu::forward(app, event.id().as_ref()))
         .setup(|app| {
             let root = match read_settings(app.handle()).data_dir {
                 // A chosen folder that has gone (e.g. a drive unplugged) falls back to the default.

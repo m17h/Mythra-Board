@@ -136,3 +136,36 @@ export const TEMPLATES: Template[] = [
     },
   },
 ];
+
+/** The board shown the very first time the app opens: a short, hands-on tour. */
+export function welcomeBoard() {
+  const b = board();
+  b.add("text", { x: 0, y: -170 }, { text: "Welcome to Mythra Board", textStyle: "title" }, { width: 700 });
+  b.add("text", { x: 0, y: -105 }, { text: "A calm place to think: write ideas down and link them together. Try things right here.", textStyle: "caption" }, { width: 760 });
+
+  // Start here
+  b.add("frame", { x: 0, y: 0 }, { text: "Start here", color: "blue" }, { width: 420, height: 560 });
+  b.add("note", { x: 30, y: 50 }, { title: "Add an idea", text: "Double-click anywhere on the board, then type." , color: "blue" }, { width: 360 });
+  const hub = b.add("note", { x: 30, y: 210 }, { text: "Your big idea", color: "blue", size: "l" }, { width: 200 });
+  const a = b.add("note", { x: 260, y: 170 }, { text: "A thought", color: "blue", size: "s" }, { width: 140 });
+  const c = b.add("note", { x: 260, y: 270 }, { text: "Another", color: "blue", size: "s" }, { width: 140 });
+  b.link(hub, a, { arrow: "none" });
+  b.link(hub, c, { arrow: "none" });
+  b.add("note", { x: 30, y: 380 }, { text: "Hover a note to see its dots. **Drag a dot** to another note to link them, or press **Tab** while typing to grow a new linked note.", color: "blue" }, { width: 360 });
+
+  // Make it yours
+  b.add("frame", { x: 460, y: 0 }, { text: "Make it yours", color: "green" }, { width: 420, height: 560 });
+  b.add("note", { x: 490, y: 50 }, { title: "Notes can have titles", text: "- [x] Tick off to-dos\n- [ ] Use # headings, - bullets and **bold**\n- [ ] Select a note to change its colour, outline and text", color: "green" }, { width: 360 });
+  b.add("shape", { x: 490, y: 270 }, { text: "Shapes", shape: "diamond", color: "yellow" }, { width: 160, height: 110 });
+  b.add("shape", { x: 680, y: 270 }, { text: "and more", shape: "star", color: "pink" }, { width: 150, height: 120 });
+  b.add("note", { x: 490, y: 420 }, { text: "Draw with the pen (P), add arrows (A) and pictures (I) from the toolbar below.", color: "green" }, { width: 360 });
+
+  // Go further
+  b.add("frame", { x: 920, y: 0 }, { text: "Go further", color: "purple" }, { width: 420, height: 560 });
+  b.add("note", { x: 950, y: 50 }, { text: "Press **⌘K** to find any action or board.", color: "purple" }, { width: 360 });
+  b.add("note", { x: 950, y: 140 }, { text: "Link boards together: [[My first ideas]] is a link. Click it to create that board.", color: "purple" }, { width: 360 });
+  b.add("note", { x: 950, y: 250 }, { text: "**Right-click** anything for more options, and press **?** for every shortcut.", color: "purple" }, { width: 360 });
+  b.add("note", { x: 950, y: 360 }, { text: "Sections like these become slides: press **⇧⌘P** to present them.", color: "purple" }, { width: 360 });
+  b.add("note", { x: 950, y: 460 }, { text: "Done exploring? Delete this board from the home screen any time.", color: "purple" }, { width: 360 });
+  return b;
+}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DuplicateIcon, FileIcon, MoreIcon, SettingsIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
 import { SettingsDialog } from "./components/SettingsDialog";
+import { markKeyHandled, onMenu } from "./menuEvents";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { isMac, keyLabel } from "./platform";
 import Thumbnail from "./components/Thumbnail";
@@ -8,7 +9,9 @@ import { createBoard, makeBoardDoc, refreshBoardIndex, updateIndexedBoard } from
 import { exportBoardFile, importBoardFile } from "./boardFile";
 import { isTauri, newBoardId, pickBoardFile, restoreBoard, trashBoard, writeBoard } from "./persistence";
 import type { BoardDoc } from "./store";
-import { TEMPLATES, type Template } from "./templates";
+import { TEMPLATES, welcomeBoard, type Template } from "./templates";
+
+const WELCOMED_KEY = "mythra-board:welcomed";
 
 type Sort = "recent" | "name" | "created";
 type Toast = { message: string; undo?: () => void };
@@ -45,10 +48,33 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  useEffect(
+    () =>
+      onMenu((id) => {
+        if (id !== "settings") return false;
+        setSettingsOpen(true);
+        return true;
+      }),
+    [],
+  );
   const search = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    refreshBoardIndex().then(setBoards, (err) => {
+    refreshBoardIndex().then(async (list) => {
+      // The very first time the app opens, start with a short hands-on tour.
+      if (!list.length && !localStorage.getItem(WELCOMED_KEY)) {
+        localStorage.setItem(WELCOMED_KEY, "1");
+        const { nodes, edges } = welcomeBoard();
+        try {
+          const doc = await createBoard(makeBoardDoc("Welcome to Mythra Board", { nodes, edges }));
+          onOpen(doc);
+          return;
+        } catch (err) {
+          console.error("Couldn't create the welcome board", err);
+        }
+      }
+      setBoards(list);
+    }, (err) => {
       console.error(err);
       setError(true);
       setBoards([]);
@@ -85,7 +111,10 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
       } else if (e.key.toLowerCase() === "o") {
         e.preventDefault();
         void openFile();
+      } else {
+        return;
       }
+      markKeyHandled();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
