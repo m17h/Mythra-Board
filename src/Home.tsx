@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DuplicateIcon, FileIcon, MoreIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
+import { DuplicateIcon, FileIcon, MoreIcon, SettingsIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { ThemeSwitch } from "./components/ThemeSwitch";
+import { isMac, keyLabel } from "./platform";
 import Thumbnail from "./components/Thumbnail";
 import { createBoard, makeBoardDoc, refreshBoardIndex, updateIndexedBoard } from "./navigation";
 import { exportBoardFile, importBoardFile } from "./boardFile";
@@ -42,6 +44,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   const [menuId, setMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const search = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -219,8 +222,8 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   );
 
   return (
-    <div className={`app home${isTauri() ? " is-tauri" : ""}`}>
-      {isTauri() && <div className="drag-strip" data-tauri-drag-region />}
+    <div className={`app home${isTauri() ? " is-tauri" : ""}${isMac ? " is-mac" : ""}`}>
+      {isTauri() && isMac && <div className="drag-strip" data-tauri-drag-region />}
       <div className="home__inner">
         <header className="home__header">
           <div className="brand">
@@ -246,11 +249,14 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
             />
           </label>
           <ThemeSwitch />
-          <button type="button" className="secondary-btn secondary-btn--icon" onClick={() => void openFile()} title="Open a board file (⌘O)">
+          <button type="button" className="secondary-btn secondary-btn--icon secondary-btn--square" onClick={() => setSettingsOpen(true)} title="Settings" aria-label="Settings">
+            <SettingsIcon />
+          </button>
+          <button type="button" className="secondary-btn secondary-btn--icon" onClick={() => void openFile()} title={keyLabel("Open a board file (⌘O)")}>
             <FileIcon />
             Open file
           </button>
-          <button type="button" className="primary-btn" onClick={() => void create(TEMPLATES[0])} title="New board (⌘N)">
+          <button type="button" className="primary-btn" onClick={() => void create(TEMPLATES[0])} title={keyLabel("New board (⌘N)")}>
             <PlusIcon />
             New board
           </button>
@@ -299,6 +305,9 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
         )}
       </div>
 
+      {settingsOpen && (
+        <SettingsDialog onClose={() => setSettingsOpen(false)} onChanged={() => void refreshBoardIndex().then(setBoards)} />
+      )}
       {menuId && <div className="menu-scrim" onPointerDown={() => setMenuId(null)} />}
       {toast && (
         <div className="toast" role="status">

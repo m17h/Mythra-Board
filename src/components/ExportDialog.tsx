@@ -3,6 +3,7 @@ import { exportBoardFile } from "../boardFile";
 import { hiddenItems } from "../mindmap";
 import { currentDoc } from "../persistence";
 import { boardStore } from "../store";
+import { useEscape } from "../useDismiss";
 
 type Format = "png" | "svg" | "pdf" | "mythra";
 
@@ -23,6 +24,7 @@ export function ExportDialog({ onClose, onNotice }: { onClose: () => void; onNot
   const [scope, setScope] = useState<"board" | "selection">(selectedCount ? "selection" : "board");
   const [background, setBackground] = useState(true);
   const [busy, setBusy] = useState(false);
+  useEscape(onClose, !busy);
 
   /** The items to export, captured before selection outlines are cleared. */
   const pick = async () => {
@@ -75,10 +77,7 @@ export function ExportDialog({ onClose, onNotice }: { onClose: () => void; onNot
         className="dialog"
         role="dialog"
         aria-label="Export"
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === "Escape" && !busy) onClose();
-        }}
+        onKeyDown={(e) => e.stopPropagation()}
       >
         <div className="dialog__title">Export</div>
         <div className="dialog__section">

@@ -25,6 +25,11 @@ fn safe_asset(name: &str) -> io::Result<&str> {
     if ASSET_EXTENSIONS.contains(&ext) { Ok(name) } else { Err(invalid("bad asset type")) }
 }
 
+/// The `updatedAt` stamp inside a saved board, if it has one.
+fn updated_at(json: &str) -> Option<u64> {
+    serde_json::from_str::<serde_json::Value>(json).ok()?.get("updatedAt")?.as_u64()
+}
+
 fn is_valid(json: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(json).is_ok()
 }
@@ -64,6 +69,7 @@ const SNAPSHOT_EVERY_MS: u128 = 10 * 60 * 1000;
 const SNAPSHOT_LIMIT: usize = 60;
 
 pub struct Storage {
+    root: PathBuf,
     boards: PathBuf,
     trash: PathBuf,
     assets: PathBuf,
@@ -77,11 +83,49 @@ fn now_ms() -> u128 {
 impl Storage {
     pub fn new(root: &Path) -> Self {
         Storage {
+            root: root.to_path_buf(),
             boards: root.join("boards"),
             trash: root.join("trash"),
             assets: root.join("assets"),
             history: root.join("history"),
         }
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Copy boards, pictures, history and trash from `old` into this folder, skipping
+    /// anything already here (so moving to a folder another Mac uses never overwrites).
+    /// Returns how many files were copied. `old` is left untouched.
+    pub fn adopt_from(&self, old: &Storage) -> io::Result<usize> {
+        fn copy_missing(from: &Path, to: &Path) -> io::Result<usize> {
+            let entries = match fs::read_dir(from) {
+                Ok(e) => e,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(0),
+                Err(e) => return Err(e),
+            };
+            fs::create_dir_all(to)?;
+            let mut copied = 0;
+            for entry in entries.filter_map(|e| e.ok()) {
+                let target = to.join(entry.file_name());
+                if entry.file_type()?.is_dir() {
+                    copied += copy_missing(&entry.path(), &target)?;
+                } else if !target.exists() {
+                    fs::copy(entry.path(), &target)?;
+                    copied += 1;
+                }
+            }
+            Ok(copied)
+        }
+        if old.root == self.root {
+            return Ok(0);
+        }
+        let mut copied = 0;
+        for (from, to) in [(&old.boards, &self.boards), (&old.assets, &self.assets), (&old.history, &self.history), (&old.trash, &self.trash)] {
+            copied += copy_missing(from, to)?;
+        }
+        Ok(copied)
     }
 
     fn main_path(&self, id: &str) -> PathBuf {
@@ -101,20 +145,29 @@ impl Storage {
         read_valid(&self.backup_path(id))
     }
 
-    pub fn save(&self, id: &str, json: &str) -> io::Result<()> {
+    /// Save a board. `expected` is the `updatedAt` of the copy the app last read or wrote;
+    /// if the file on disk has since changed (another Mac edited it through a synced folder),
+    /// that copy is kept in history before being replaced, and `true` is returned.
+    pub fn save(&self, id: &str, json: &str, expected: Option<u64>) -> io::Result<bool> {
         let id = safe_id(id)?;
         if !is_valid(json) {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "refusing to save invalid board data"));
         }
         fs::create_dir_all(&self.boards)?;
         let main = self.main_path(id);
-        if main.exists() {
+        let mut conflict = false;
+        if let Ok(existing) = fs::read_to_string(&main) {
+            let on_disk = updated_at(&existing);
+            if expected.is_some() && on_disk.is_some() && on_disk != expected && on_disk != updated_at(json) {
+                self.snapshot(id, &existing, true)?;
+                conflict = true;
+            }
             fs::copy(&main, self.backup_path(id))?;
         }
         write_atomic(&main, json.as_bytes())?;
         // History is a bonus; a failure here must never fail the save itself.
         let _ = self.snapshot(id, json, false);
-        Ok(())
+        Ok(conflict)
     }
 
     fn history_dir(&self, id: &str) -> PathBuf {
@@ -251,9 +304,9 @@ mod tests {
     fn saves_lists_and_loads() {
         let (_d, s) = store();
         assert!(s.list().unwrap().is_empty());
-        s.save("a", r#"{"v":1}"#).unwrap();
-        s.save("a", r#"{"v":2}"#).unwrap();
-        s.save("b", r#"{"v":3}"#).unwrap();
+        s.save("a", r#"{"v":1}"#, None).unwrap();
+        s.save("a", r#"{"v":2}"#, None).unwrap();
+        s.save("b", r#"{"v":3}"#, None).unwrap();
         assert_eq!(s.load("a").unwrap().as_deref(), Some(r#"{"v":2}"#));
         let mut ids: Vec<_> = s.list().unwrap().into_iter().map(|(id, _)| id).collect();
         ids.sort();
@@ -263,8 +316,8 @@ mod tests {
     #[test]
     fn falls_back_to_backup_and_keeps_damaged_file() {
         let (d, s) = store();
-        s.save("a", r#"{"v":1}"#).unwrap();
-        s.save("a", r#"{"v":2}"#).unwrap();
+        s.save("a", r#"{"v":1}"#, None).unwrap();
+        s.save("a", r#"{"v":2}"#, None).unwrap();
         fs::write(d.path().join("boards/a.json"), "{broken").unwrap();
         assert_eq!(s.load("a").unwrap().as_deref(), Some(r#"{"v":1}"#));
         let damaged = fs::read_dir(d.path().join("boards"))
@@ -278,7 +331,7 @@ mod tests {
     #[test]
     fn trash_and_restore() {
         let (_d, s) = store();
-        s.save("a", r#"{"v":1}"#).unwrap();
+        s.save("a", r#"{"v":1}"#, None).unwrap();
         s.trash("a").unwrap();
         assert!(s.list().unwrap().is_empty());
         s.restore("a").unwrap();
@@ -288,9 +341,9 @@ mod tests {
     #[test]
     fn keeps_spaced_out_history() {
         let (_d, s) = store();
-        s.save("a", r#"{"v":1}"#).unwrap();
+        s.save("a", r#"{"v":1}"#, None).unwrap();
         // A save straight after doesn't add another snapshot...
-        s.save("a", r#"{"v":2}"#).unwrap();
+        s.save("a", r#"{"v":2}"#, None).unwrap();
         assert_eq!(s.versions("a").unwrap().len(), 1);
         // ...but a forced one does (unless nothing changed).
         std::thread::sleep(std::time::Duration::from_millis(2));
@@ -304,10 +357,40 @@ mod tests {
     }
 
     #[test]
+    fn keeps_the_other_devices_copy_when_saves_cross() {
+        let (_d, s) = store();
+        assert!(!s.save("a", r#"{"updatedAt":1,"v":"mine"}"#, None).unwrap());
+        // Another Mac saves a newer copy through the synced folder...
+        assert!(!s.save("a", r#"{"updatedAt":5,"v":"theirs"}"#, Some(1)).unwrap());
+        // ...then this Mac, still expecting the copy it last saved (1), saves over it.
+        assert!(s.save("a", r#"{"updatedAt":6,"v":"mine again"}"#, Some(1)).unwrap());
+        let theirs = s.versions("a").unwrap().iter().any(|&t| s.load_version("a", t).unwrap().contains("theirs"));
+        assert!(theirs, "the overwritten copy should be in history");
+        // Saving on top of our own last save is not a conflict.
+        assert!(!s.save("a", r#"{"updatedAt":7,"v":"next"}"#, Some(6)).unwrap());
+    }
+
+    #[test]
+    fn moving_to_a_new_folder_copies_without_overwriting() {
+        let (old_dir, old) = store();
+        let new_dir = tempfile::tempdir().unwrap();
+        let new = Storage::new(new_dir.path());
+        old.save("a", r#"{"v":"old a"}"#, None).unwrap();
+        old.save("b", r#"{"v":"old b"}"#, None).unwrap();
+        old.save_asset("pic.png", b"png").unwrap();
+        new.save("b", r#"{"v":"new b"}"#, None).unwrap();
+        assert!(new.adopt_from(&old).unwrap() >= 2);
+        assert_eq!(new.load("a").unwrap().as_deref(), Some(r#"{"v":"old a"}"#));
+        assert_eq!(new.load("b").unwrap().as_deref(), Some(r#"{"v":"new b"}"#));
+        assert_eq!(new.load_asset("pic.png").unwrap(), b"png");
+        assert!(old_dir.path().join("boards/a.json").exists());
+    }
+
+    #[test]
     fn rejects_bad_input() {
         let (_d, s) = store();
-        assert!(s.save("a", "nope").is_err());
-        assert!(s.save("../evil", "{}").is_err());
+        assert!(s.save("a", "nope", None).is_err());
+        assert!(s.save("../evil", "{}", None).is_err());
         assert!(s.load("a/b").is_err());
         assert!(s.save_asset("../x.png", b"x").is_err());
         assert!(s.save_asset("x.exe", b"x").is_err());

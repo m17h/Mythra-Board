@@ -18,6 +18,9 @@ import { CommandPalette, type Command } from "./components/CommandPalette";
 import BoardDefs from "./components/BoardDefs";
 import { ExportDialog } from "./components/ExportDialog";
 import { Presentation } from "./components/Presentation";
+import { SettingsDialog } from "./components/SettingsDialog";
+import { setNotifier } from "./notify";
+import { isMac, keyLabel } from "./platform";
 import { FindBar } from "./components/FindBar";
 import { VersionHistory } from "./components/VersionHistory";
 import type { Point } from "./geometry";
@@ -56,7 +59,7 @@ import LinkPreview from "./components/LinkPreview";
 import { LinkToolbar, SelectionToolbar, ToolButton } from "./components/Toolbars";
 import { addImages } from "./images";
 import { rectOf } from "./layout";
-import { isTauri, type SaveStatus } from "./persistence";
+import { isTauri, onSaveNotice, type SaveStatus } from "./persistence";
 import { boardStore, pauseSnapping, setSnapZoom, useBoard } from "./store";
 import { BACKGROUNDS, DEFAULT_NOTE_WIDTH, type BoardBackground, type BoardNode, type Color, type LinkEdge } from "./types";
 import { ThemeSwitch } from "./components/ThemeSwitch";
@@ -124,11 +127,14 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
 
   useEffect(() => {
     void refreshBoardIndex();
+    onSaveNotice(setNotice);
+    setNotifier(setNotice);
   }, []);
 
   const [exportOpen, setExportOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [presenting, setPresenting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const boardStyle = useBoard((s) => s.style);
   const present = useCallback(() => {
     const s = boardStore.getState();
@@ -147,7 +153,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
 
   useEffect(() => {
     if (!notice || notice.endsWith("…")) return;
-    const t = setTimeout(() => setNotice(null), 2500);
+    const t = setTimeout(() => setNotice(null), notice.length > 50 ? 6000 : 2500);
     return () => clearTimeout(t);
   }, [notice]);
 
@@ -195,6 +201,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       goHome: onHome,
       goBack: back ? onBack : undefined,
       openBoardById: (id) => void openBoard(id),
+      openSettings: () => setSettingsOpen(true),
       extra: [
         { id: "board:present", group: "Board", label: "Present sections", keys: "⇧⌘P", icon: <PresentIcon />, keywords: "slides slideshow", run: present },
         {
@@ -275,7 +282,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
   return (
     <div
       ref={container}
-      className={`app board tool-${tool} style-${boardStyle}${drawing ? " is-drawing" : ""}${connecting ? " is-connecting" : ""}${IS_TAURI ? " is-tauri" : ""}${presenting ? " is-presenting" : ""}`}
+      className={`app board tool-${tool} style-${boardStyle}${drawing ? " is-drawing" : ""}${connecting ? " is-connecting" : ""}${IS_TAURI ? " is-tauri" : ""}${isMac ? " is-mac" : ""}${presenting ? " is-presenting" : ""}`}
       onPointerMove={(e) => {
         pointer.current = { x: e.clientX, y: e.clientY };
       }}
@@ -404,6 +411,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         onExport={exportPng}
         onHistory={() => setHistoryOpen(true)}
         onPresent={present}
+        onSettings={() => setSettingsOpen(true)}
       />
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
@@ -466,6 +474,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       </div>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {presenting && <Presentation onExit={() => setPresenting(false)} />}
       {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} onNotice={setNotice} />}
       {historyOpen && <VersionHistory onClose={() => setHistoryOpen(false)} onNotice={setNotice} />}
@@ -570,6 +579,7 @@ function TitleBar({
   onExport,
   onHistory,
   onPresent,
+  onSettings,
 }: {
   status: SaveStatus;
   onHome: () => void;
@@ -578,6 +588,7 @@ function TitleBar({
   onExport: () => void;
   onHistory: () => void;
   onPresent: () => void;
+  onSettings: () => void;
 }) {
   const title = useBoard((s) => s.title);
   const boardId = useBoard((s) => s.boardId);
@@ -613,7 +624,7 @@ function TitleBar({
         <BoardsIcon />
       </ToolButton>
       {back && (
-        <button type="button" className="back-btn" title={`Back to “${back.title}” (⌘[)`} onClick={onBack}>
+        <button type="button" className="back-btn" title={keyLabel(`Back to “${back.title}” (⌘[)`)} onClick={onBack}>
           <BackIcon />
           <span>{back.title}</span>
         </button>
@@ -729,7 +740,7 @@ function TitleBar({
                 }}
               >
                 <span>Export…</span>
-                <kbd className="menu__keys">⇧⌘E</kbd>
+                <kbd className="menu__keys">{keyLabel("⇧⌘E")}</kbd>
               </button>
               <button
                 type="button"
@@ -750,7 +761,17 @@ function TitleBar({
                 }}
               >
                 <span>Present sections</span>
-                <kbd className="menu__keys">⇧⌘P</kbd>
+                <kbd className="menu__keys">{keyLabel("⇧⌘P")}</kbd>
+              </button>
+              <button
+                type="button"
+                className="menu__item"
+                onClick={() => {
+                  setMenu(false);
+                  onSettings();
+                }}
+              >
+                <span>Settings…</span>
               </button>
             </div>
           </>
@@ -816,7 +837,7 @@ function HelpPanel({ onClose }: { onClose: () => void }) {
       <dl>
         {SHORTCUTS.map(([keys, what]) => (
           <div key={keys} className="help-row">
-            <dt>{keys}</dt>
+            <dt>{keyLabel(keys)}</dt>
             <dd>{what}</dd>
           </div>
         ))}

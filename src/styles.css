@@ -995,7 +995,7 @@ kbd {
   padding: 3px 4px 3px 3px;
   border-radius: 12px;
 }
-.is-tauri .title-bar {
+.is-tauri.is-mac .title-bar {
   left: 84px;
   top: 8px;
 }
@@ -1263,7 +1263,7 @@ kbd {
   margin: 0 auto;
   padding: 28px 40px 80px;
 }
-.is-tauri .home__inner {
+.is-tauri.is-mac .home__inner {
   padding-top: 44px;
 }
 .home__header {
@@ -2888,4 +2888,90 @@ svg.is-locked::before {
 }
 .style-sketchy .outline-set:not(.has-outline) > .item-sketch {
   display: none;
+}
+
+/* ---------- Settings ---------- */
+
+.settings {
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+.settings__location {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-sunk);
+  font-size: 13.5px;
+}
+.settings__location span {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.settings__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings__note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.settings__ok {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--ink-green);
+  font-weight: 550;
+}
+.settings__input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  outline: none;
+  background: var(--surface-sunk);
+  color: var(--text);
+  font-size: 13.5px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.settings__input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.settings .primary-btn {
+  height: 36px;
+}
+.settings__message {
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13px;
+}
+.settings__version {
+  font-size: 12px;
+  color: var(--muted);
+}
+.secondary-btn--square {
+  width: 38px;
+  padding: 0;
+  justify-content: center;
+}
+.ai-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 250px;
 }

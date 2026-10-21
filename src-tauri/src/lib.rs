@@ -1,11 +1,99 @@
+mod ai;
 mod storage;
 
+use std::path::PathBuf;
+use std::sync::RwLock;
 use storage::Storage;
 use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
-type Store<'a> = tauri::State<'a, Storage>;
+type Store<'a> = tauri::State<'a, RwLock<Storage>>;
+
+/// Which folder boards are kept in. Saved in the app's settings file.
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct Settings {
+    data_dir: Option<PathBuf>,
+}
+
+fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().app_config_dir().map_err(|e| e.to_string())?.join("settings.json"))
+}
+
+fn read_settings(app: &tauri::AppHandle) -> Settings {
+    settings_path(app)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn write_settings(app: &tauri::AppHandle, settings: &Settings) -> Result<(), String> {
+    let path = settings_path(app)?;
+    std::fs::create_dir_all(path.parent().unwrap_or(&path)).map_err(err)?;
+    std::fs::write(path, serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?).map_err(err)
+}
+
+fn default_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path().app_data_dir().map_err(|e| e.to_string())
+}
+
+/// iCloud Drive's folder on this Mac, if iCloud Drive is turned on.
+fn icloud_drive(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let dir = app.path().home_dir().ok()?.join("Library/Mobile Documents/com~apple~CloudDocs");
+    dir.is_dir().then_some(dir)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Location {
+    path: String,
+    kind: &'static str,
+    icloud_available: bool,
+}
+
+fn location(app: &tauri::AppHandle, store: &Storage) -> Location {
+    let root = store.root();
+    let kind = if Some(root) == default_dir(app).ok().as_deref() {
+        "default"
+    } else if icloud_drive(app).is_some_and(|i| root.starts_with(i)) {
+        "icloud"
+    } else {
+        "custom"
+    };
+    Location { path: root.display().to_string(), kind, icloud_available: icloud_drive(app).is_some() }
+}
+
+#[tauri::command]
+fn storage_location(app: tauri::AppHandle, store: Store) -> Location {
+    location(&app, &store.read().unwrap())
+}
+
+/// Move where boards are kept: "default", "icloud", or a folder the user picks. Boards are
+/// copied over (never overwriting what's already there), and the old folder is left as is.
+#[tauri::command]
+async fn choose_storage_location(app: tauri::AppHandle, store: Store<'_>, kind: String) -> Result<Option<Location>, String> {
+    let target = match kind.as_str() {
+        "default" => default_dir(&app)?,
+        "icloud" => icloud_drive(&app).ok_or("iCloud Drive isn't turned on for this Mac")?.join("Mythra Board"),
+        "folder" => {
+            let Some(picked) = app.dialog().file().set_title("Choose a folder for your boards").blocking_pick_folder() else {
+                return Ok(None);
+            };
+            let picked = picked.into_path().map_err(|e| e.to_string())?;
+            if picked.file_name().is_some_and(|n| n == "Mythra Board") { picked } else { picked.join("Mythra Board") }
+        }
+        _ => return Err("unknown location".into()),
+    };
+    std::fs::create_dir_all(&target).map_err(err)?;
+    let next = Storage::new(&target);
+    next.adopt_from(&store.read().unwrap()).map_err(err)?;
+    let is_default = target == default_dir(&app)?;
+    write_settings(&app, &Settings { data_dir: (!is_default).then(|| target.clone()) })?;
+    *store.write().unwrap() = next;
+    Ok(Some(location(&app, &store.read().unwrap())))
+}
 
 fn err(e: std::io::Error) -> String {
     e.to_string()
@@ -19,28 +107,30 @@ struct BoardFile {
 
 #[tauri::command]
 fn list_boards(store: Store) -> Result<Vec<BoardFile>, String> {
-    let boards = store.list().map_err(err)?;
+    let boards = store.read().unwrap().list().map_err(err)?;
     Ok(boards.into_iter().map(|(id, json)| BoardFile { id, json }).collect())
 }
 
 #[tauri::command]
 fn load_board(store: Store, id: String) -> Result<Option<String>, String> {
-    store.load(&id).map_err(err)
+    store.read().unwrap().load(&id).map_err(err)
 }
 
+/// Returns true if another device had changed the board since we last saved it (that
+/// copy is kept in the board's version history).
 #[tauri::command]
-fn save_board(store: Store, id: String, json: String) -> Result<(), String> {
-    store.save(&id, &json).map_err(err)
+fn save_board(store: Store, id: String, json: String, expected: Option<u64>) -> Result<bool, String> {
+    store.read().unwrap().save(&id, &json, expected).map_err(err)
 }
 
 #[tauri::command]
 fn trash_board(store: Store, id: String) -> Result<(), String> {
-    store.trash(&id).map_err(err)
+    store.read().unwrap().trash(&id).map_err(err)
 }
 
 #[tauri::command]
 fn restore_board(store: Store, id: String) -> Result<(), String> {
-    store.restore(&id).map_err(err)
+    store.read().unwrap().restore(&id).map_err(err)
 }
 
 /// Image bytes arrive as the raw request body, with the file name in a header.
@@ -54,7 +144,7 @@ fn save_asset(store: Store, request: Request) -> Result<(), String> {
         .get("asset-name")
         .and_then(|v| v.to_str().ok())
         .ok_or("missing asset name")?;
-    store.save_asset(name, bytes).map_err(err)
+    store.read().unwrap().save_asset(name, bytes).map_err(err)
 }
 
 /// The kinds of file the app writes, with their extension and save-dialog label.
@@ -123,23 +213,43 @@ fn copy_image(request: Request) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn ai_key_status() -> bool {
+    ai::has_key()
+}
+
+#[tauri::command]
+fn set_ai_key(key: String) -> Result<(), String> {
+    ai::set_key(&key)
+}
+
+#[tauri::command]
+fn clear_ai_key() -> Result<(), String> {
+    ai::clear_key()
+}
+
+#[tauri::command]
+async fn ask_ai(model: String, system: String, prompt: String) -> Result<String, String> {
+    ai::ask(&model, &system, &prompt).await
+}
+
+#[tauri::command]
 fn list_versions(store: Store, id: String) -> Result<Vec<u64>, String> {
-    store.versions(&id).map_err(err)
+    store.read().unwrap().versions(&id).map_err(err)
 }
 
 #[tauri::command]
 fn load_version(store: Store, id: String, time: u64) -> Result<String, String> {
-    store.load_version(&id, time).map_err(err)
+    store.read().unwrap().load_version(&id, time).map_err(err)
 }
 
 #[tauri::command]
 fn snapshot_board(store: Store, id: String, json: String) -> Result<bool, String> {
-    store.snapshot(&id, &json, true).map_err(err)
+    store.read().unwrap().snapshot(&id, &json, true).map_err(err)
 }
 
 #[tauri::command]
 fn load_asset(store: Store, name: String) -> Result<Response, String> {
-    store.load_asset(&name).map(Response::new).map_err(err)
+    store.read().unwrap().load_asset(&name).map(Response::new).map_err(err)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -148,8 +258,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let root = app.path().app_data_dir()?;
-            app.manage(Storage::new(&root));
+            let root = match read_settings(app.handle()).data_dir {
+                // A chosen folder that has gone (e.g. a drive unplugged) falls back to the default.
+                Some(dir) if dir.is_dir() => dir,
+                _ => app.path().app_data_dir()?,
+            };
+            app.manage(RwLock::new(Storage::new(&root)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -165,7 +279,13 @@ pub fn run() {
             copy_image,
             list_versions,
             load_version,
-            snapshot_board
+            snapshot_board,
+            storage_location,
+            choose_storage_location,
+            ai_key_status,
+            set_ai_key,
+            clear_ai_key,
+            ask_ai
         ])
         .run(tauri::generate_context!())
         .expect("error while running Mythra Board");

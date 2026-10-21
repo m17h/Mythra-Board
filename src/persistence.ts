@@ -267,10 +267,15 @@ export async function loadBoard(id: string): Promise<BoardDoc | null> {
   return json ? { ...fromSaved(JSON.parse(json), id), id } : null;
 }
 
-export async function writeBoard(doc: BoardDoc): Promise<void> {
+/**
+ * Save a board. `expected` is the `updatedAt` of the copy we last read or wrote; if another
+ * device has changed the file since, its copy goes into version history and this returns true.
+ */
+export async function writeBoard(doc: BoardDoc, expected?: number): Promise<boolean> {
   const json = JSON.stringify(toSaved(doc));
-  if (isTauri()) await invoke("save_board", { id: doc.id, json });
-  else localStorage.setItem(LOCAL_PREFIX + doc.id, json);
+  if (isTauri()) return invoke<boolean>("save_board", { id: doc.id, json, expected: expected ?? null });
+  localStorage.setItem(LOCAL_PREFIX + doc.id, json);
+  return false;
 }
 
 const localTrash = new Map<string, string>();
@@ -364,6 +369,13 @@ export const onSaveStatus = (fn: (s: SaveStatus) => void) => {
   statusListener = fn;
 };
 
+let diskStamp = 0;
+let noticeListener: (message: string) => void = () => {};
+/** Messages about saving that the person should see (e.g. edits from another device). */
+export const onSaveNotice = (fn: (message: string) => void) => {
+  noticeListener = fn;
+};
+
 /** The open board as a saveable document. */
 export function currentDoc(): BoardDoc {
   const s = boardStore.getState();
@@ -402,9 +414,11 @@ export async function flushSave(): Promise<void> {
   if (json === lastSaved) return;
   statusListener("saving");
   try {
-    await writeBoard(doc);
+    const conflict = await writeBoard(doc, diskStamp);
+    diskStamp = doc.updatedAt;
     lastSaved = json;
     statusListener("saved");
+    if (conflict) noticeListener("This board was also changed on another device. That version is kept in Version history.");
   } catch (err) {
     console.error("Save failed", err);
     statusListener("error");
@@ -416,6 +430,7 @@ export function openInEditor(doc: BoardDoc) {
   unsubscribe?.();
   boardStore.getState().load({ ...doc, nodes: doc.nodes.map(decorate) });
   updatedAt = doc.updatedAt;
+  diskStamp = doc.updatedAt;
   lastContent = contentKey(currentDoc());
   lastSaved = JSON.stringify(toSaved({ ...currentDoc(), updatedAt }));
   statusListener("idle");

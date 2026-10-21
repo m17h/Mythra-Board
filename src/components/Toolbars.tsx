@@ -29,6 +29,9 @@ import {
 } from "../types";
 import { useLinkGeometry } from "./LinkLine";
 import { ShapeGlyph, SHAPE_NAMES } from "../shapes";
+import { aiActions, aiSupported } from "../ai";
+import { runAi } from "../notify";
+import { keyLabel } from "../platform";
 import {
   AlignCenterIcon,
   AlignLeftIcon,
@@ -41,6 +44,8 @@ import {
   GroupIcon,
   LockIcon,
   MoreIcon,
+  SparkleIcon,
+  TidyIcon,
   OutlineIcon,
   ArrowEndIcon,
   ArrowNoneIcon,
@@ -85,8 +90,8 @@ export function ToolButton({
     <button
       type="button"
       className={`tool-btn${active ? " is-active" : ""}${danger ? " is-danger" : ""}`}
-      title={label}
-      aria-label={label}
+      title={keyLabel(label)}
+      aria-label={keyLabel(label)}
       aria-pressed={active}
       disabled={disabled}
       // Keep focus (and any text being typed) where it is.
@@ -138,7 +143,27 @@ export function SizeButtons({ value, onPick }: { value: Size | null; onPick: (s:
 
 const only = <T,>(values: T[]): T | null => (values.length && values.every((v) => v === values[0]) ? values[0] : null);
 
-type Panel = "color" | "outline" | "text" | "shape" | "arrange";
+type Panel = "color" | "outline" | "text" | "shape" | "arrange" | "ai";
+
+function AiPanel({ id, close }: { id: string; close: () => void }) {
+  const go = (fn: () => Promise<string>) => {
+    close();
+    void runAi(fn);
+  };
+  return (
+    <div className="ai-actions">
+      <button type="button" className="popover__action" onClick={() => go(() => aiActions.brainstorm(id))}>
+        <SparkleIcon /> Brainstorm ideas from this
+      </button>
+      <button type="button" className="popover__action" onClick={() => go(() => aiActions.mindMap(id))}>
+        <TidyIcon /> Turn this into a mind map
+      </button>
+      <button type="button" className="popover__action" onClick={() => go(aiActions.summarise)}>
+        <CardTitleIcon /> Summarise this board
+      </button>
+    </div>
+  );
+}
 
 const ARRANGE_NAMES: Record<ArrangeMode, string> = {
   left: "Align left edges (⌥A)",
@@ -591,6 +616,11 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
           >
             <CardTitleIcon />
           </ToolButton>
+        )}
+        {single && TEXTUAL.has(single.type) && aiSupported() && (
+          <PanelButton label="AI" open={open === "ai"} onToggle={() => toggle("ai")} panel={<AiPanel id={single.id} close={() => setOpen(null)} />}>
+            <SparkleIcon />
+          </PanelButton>
         )}
         {single && LINKABLE.has(single.type) && (
           <ToolButton label="Add linked note (Tab)" onClick={() => store.addLinkedNote(single.id, Position.Right)}>

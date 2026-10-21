@@ -1,7 +1,10 @@
 import { Position, useReactFlow } from "@xyflow/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Point } from "../geometry";
+import { aiActions, aiSupported } from "../ai";
 import { childrenOf } from "../mindmap";
+import { runAi } from "../notify";
+import { keyLabel } from "../platform";
 import { boardStore } from "../store";
 import { DEFAULT_NOTE_WIDTH, EDITABLE, LINKABLE } from "../types";
 
@@ -77,6 +80,12 @@ export function ContextMenu({
         ? [
             { label: single.data.collapsed ? "Unfold branch" : "Fold branch", keys: "C", run: () => s.toggleCollapse(single.id) },
             ...(hasKids ? [{ label: "Tidy up branch", run: () => void s.tidyUp([single.id]) }] : []),
+          ]
+        : []),
+      ...(single && aiSupported() && ["note", "text", "shape"].includes(single.type)
+        ? [
+            { label: "✨ Brainstorm ideas", run: () => void runAi(() => aiActions.brainstorm(single.id)) },
+            { label: "✨ Turn into a mind map", run: () => void runAi(() => aiActions.mindMap(single.id)) },
           ]
         : []),
       { label: "Duplicate", keys: "⌘D", run: () => s.duplicateSelection() },
@@ -158,7 +167,7 @@ function MenuItem({ children, keys, danger, onClick }: { children: ReactNode; ke
       onClick={onClick}
     >
       <span>{children}</span>
-      {keys && <kbd className="menu__keys">{keys}</kbd>}
+      {keys && <kbd className="menu__keys">{keyLabel(keys)}</kbd>}
     </button>
   );
 }

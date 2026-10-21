@@ -20,3 +20,18 @@ export function useDismiss(ref: RefObject<HTMLElement | null>, open: boolean, on
     };
   }, [ref, open, onClose]);
 }
+
+/** Close a dialog with Esc, wherever keyboard focus happens to be. */
+export function useEscape(onClose: () => void, enabled = true) {
+  useEffect(() => {
+    if (!enabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      e.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose, enabled]);
+}

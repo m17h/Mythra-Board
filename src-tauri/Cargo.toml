@@ -18,9 +18,12 @@ tauri-plugin-opener = "2"
 serde = { version = "1.0.229", features = ["derive"] }
 tauri-plugin-dialog = "2"
 arboard = { version = "3", default-features = false, features = ["image-data"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros"] }
 
 [profile.release]
 codegen-units = 1

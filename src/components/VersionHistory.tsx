@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { currentDoc, flushSave, listVersions, loadVersion, snapshotNow } from "../persistence";
 import { boardStore, useBoard, type BoardDoc } from "../store";
+import { useEscape } from "../useDismiss";
 import Thumbnail from "./Thumbnail";
 
 function when(t: number, now = Date.now()): string {
@@ -23,6 +24,7 @@ export function VersionHistory({ onClose, onNotice }: { onClose: () => void; onN
   const [picked, setPicked] = useState<number | null>(null);
   const [preview, setPreview] = useState<BoardDoc | null>(null);
   const [error, setError] = useState(false);
+  useEscape(onClose);
 
   const refresh = () =>
     listVersions(boardId).then(setVersions, (err) => {

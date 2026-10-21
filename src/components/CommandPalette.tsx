@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { keyLabel } from "../platform";
 
 export type Command = {
   id: string;
@@ -123,7 +124,7 @@ export function CommandPalette({
                 <span className="palette__icon">{c.icon}</span>
                 <span className="palette__label">{c.label}</span>
                 {c.detail && <span className="palette__detail">{c.detail}</span>}
-                {c.keys && <kbd className="menu__keys">{c.keys}</kbd>}
+                {c.keys && <kbd className="menu__keys">{keyLabel(c.keys)}</kbd>}
               </button>
             </div>
           ))}

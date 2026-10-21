@@ -27,7 +27,11 @@ import {
   TextIcon,
   TidyIcon,
   AutoThemeIcon,
+  SettingsIcon,
+  SparkleIcon,
 } from "./components/icons";
+import { aiActions, aiSupported } from "./ai";
+import { runAi } from "./notify";
 import { childrenOf } from "./mindmap";
 import { boardIndex } from "./navigation";
 import { ShapeGlyph, SHAPE_NAMES } from "./shapes";
@@ -45,6 +49,7 @@ export type BoardActions = {
   goHome: () => void;
   goBack?: () => void;
   openBoardById: (id: string) => void;
+  openSettings: () => void;
   /** Extra commands from features that live elsewhere (presenting, history, …). */
   extra?: Command[];
 };
@@ -159,6 +164,14 @@ export function useBoardCommands(actions: BoardActions, open: boolean): Command[
       run: () => document.querySelector<HTMLInputElement>(".title-input")?.focus(),
     });
     cmds.push(...(actions.extra ?? []));
+    if (aiSupported()) {
+      if (single && ["note", "text", "shape"].includes(single.type)) {
+        add("AI", { label: "Brainstorm ideas from this", icon: <SparkleIcon />, keywords: "claude ai suggest", run: () => void runAi(() => aiActions.brainstorm(single.id)) });
+        add("AI", { label: "Turn this into a mind map", icon: <SparkleIcon />, keywords: "claude ai", run: () => void runAi(() => aiActions.mindMap(single.id)) });
+      }
+      add("AI", { label: "Summarise this board", icon: <SparkleIcon />, keywords: "claude ai summary", run: () => void runAi(aiActions.summarise) });
+    }
+    add("App", { label: "Settings…", icon: <SettingsIcon />, keywords: "preferences icloud sync storage ai key", run: actions.openSettings });
 
     add("App", { label: "Appearance: Auto", icon: <AutoThemeIcon />, keywords: "theme system", run: () => setThemeSetting("system") });
     add("App", { label: "Appearance: Light", icon: <SunIcon />, keywords: "theme", run: () => setThemeSetting("light") });
