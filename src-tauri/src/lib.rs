@@ -1,6 +1,7 @@
 mod ai;
 mod menu;
 mod storage;
+mod windows;
 
 use std::path::PathBuf;
 use std::sync::RwLock;
@@ -331,7 +332,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .menu(|app| menu::build(app))
-        .on_menu_event(|app, event| menu::forward(app, event.id().as_ref()))
+        .on_menu_event(|app, event| windows::send_menu(app, event.id().as_ref()))
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                window.state::<windows::OpenBoards>().forget(window.label());
+            }
+        })
         .setup(|app| {
             let root = match read_settings(app.handle()).data_dir {
                 // A chosen folder that has gone (e.g. a drive unplugged) falls back to the default.
@@ -343,6 +349,7 @@ pub fn run() {
             let _ = store.purge_trash(TRASH_DAYS * DAY_MS);
             let _ = store.cleanup_assets(ASSET_MIN_AGE_MS);
             app.manage(RwLock::new(store));
+            app.manage(windows::OpenBoards::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -372,7 +379,11 @@ pub fn run() {
             ai_key_status,
             set_ai_key,
             clear_ai_key,
-            ask_ai
+            ask_ai,
+            windows::claim_board,
+            windows::start_board,
+            windows::boards_open_elsewhere,
+            windows::open_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running Mythra Board");

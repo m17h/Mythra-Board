@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DuplicateIcon, FileIcon, MoreIcon, SettingsIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
+import { DuplicateIcon, FileIcon, MoreIcon, NewWindowIcon, SettingsIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { markKeyHandled, onMenu } from "./menuEvents";
 import { ThemeSwitch } from "./components/ThemeSwitch";
@@ -21,6 +21,7 @@ import { isTauri, newBoardId, pickBoardFile, restoreBoard, trashBoard, writeBoar
 import type { BoardDoc } from "./store";
 import { customTemplate, saveAsTemplate, TEMPLATES, welcomeBoard, type Template } from "./templates";
 import { TrashDialog } from "./components/TrashDialog";
+import { canOpenWindows, onWindowFocus, openWindow } from "./windows";
 
 const WELCOMED_KEY = "mythra-board:welcomed";
 
@@ -126,6 +127,9 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
     });
   }, []);
 
+  // Other windows may have changed boards: catch up when this window comes back to the front.
+  useEffect(() => onWindowFocus(() => void refreshBoardIndex().then(setBoards, () => {})), []);
+
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 6000);
@@ -147,7 +151,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key.toLowerCase() === "n") {
+      if (e.key.toLowerCase() === "n" && !e.shiftKey) {
         e.preventDefault();
         void create(TEMPLATES[0]);
       } else if (e.key.toLowerCase() === "f") {
@@ -525,9 +529,14 @@ function BoardCard({
   onDelete: () => void;
   onTemplate: () => void;
 }) {
+  // ⌘-click (Ctrl-click on Windows) opens the board in a new window.
+  const openFrom = (e: React.MouseEvent) => {
+    if ((e.metaKey || e.ctrlKey) && canOpenWindows()) void openWindow(doc.id);
+    else onOpen();
+  };
   return (
     <div className={`board-card${menuOpen ? " is-menu-open" : ""}`}>
-      <button type="button" className={`board-card__preview bg--${doc.background}`} onClick={onOpen} aria-label={`Open ${doc.title}`}>
+      <button type="button" className={`board-card__preview bg--${doc.background}`} onClick={openFrom} aria-label={`Open ${doc.title}`}>
         <Thumbnail nodes={doc.nodes} edges={doc.edges} />
       </button>
       <div className="board-card__meta">
@@ -544,7 +553,7 @@ function BoardCard({
             }}
           />
         ) : (
-          <button type="button" className="board-card__title" onClick={onOpen} onDoubleClick={onStartRename} title={doc.title}>
+          <button type="button" className="board-card__title" onClick={openFrom} onDoubleClick={onStartRename} title={doc.title}>
             {doc.title}
           </button>
         )}
@@ -568,6 +577,19 @@ function BoardCard({
           </button>
           {menuOpen && (
             <div className="menu menu--card" role="menu">
+              {canOpenWindows() && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="menu__item"
+                  onClick={() => {
+                    onMenu(false);
+                    void openWindow(doc.id);
+                  }}
+                >
+                  <NewWindowIcon /> Open in new window
+                </button>
+              )}
               <button type="button" role="menuitem" className="menu__item" onClick={onStartRename}>
                 <RenameIcon /> Rename
               </button>

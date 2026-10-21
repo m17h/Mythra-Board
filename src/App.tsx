@@ -4,7 +4,15 @@ import BoardView from "./BoardView";
 import Home from "./Home";
 import { importBoardFile } from "./boardFile";
 import { listenToMenu, onMenu, typingNow, undoText } from "./menuEvents";
-import { createBoard, makeBoardDoc, setNavigator, updateIndexedBoard } from "./navigation";
+import {
+  createBoard,
+  focusOnOpen,
+  followRenamesFromOtherWindows,
+  makeBoardDoc,
+  refreshBoardIndex,
+  setNavigator,
+  updateIndexedBoard,
+} from "./navigation";
 import { setThemeSetting, type ThemeSetting } from "./theme";
 import {
   closeEditor,
@@ -17,12 +25,13 @@ import {
   type SaveStatus,
 } from "./persistence";
 import { boardStore, type BoardDoc } from "./store";
+import { claimBoard, onWindowFocus, openWindow, startBoard } from "./windows";
 
-type Screen = { name: "home" } | { name: "board"; id: string };
+type Screen = { name: "starting" } | { name: "home" } | { name: "board"; id: string };
 export type TrailStep = { id: string; title: string };
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>({ name: "home" });
+  const [screen, setScreen] = useState<Screen>({ name: "starting" });
   const [status, setStatus] = useState<SaveStatus>("idle");
   // Boards you followed links from, most recent last, so Back can retrace them.
   const [trail, setTrail] = useState<TrailStep[]>([]);
@@ -33,7 +42,13 @@ export default function App() {
     onSaveStatus(setStatus);
     void saveOnQuit();
     void listenToMenu();
+    followRenamesFromOtherWindows();
   }, []);
+
+  // Other windows may have changed boards: catch up (for links and backlinks) on coming back.
+  useEffect(() => onWindowFocus(() => {
+    if (screenRef.current.name === "board") void refreshBoardIndex().catch(() => {});
+  }), []);
 
   /** Save the open board and keep the board index in step with it. */
   const leaveBoard = useCallback(async () => {
@@ -47,8 +62,20 @@ export default function App() {
     setScreen({ name: "board", id: doc.id });
   }, []);
 
+  // A window opened for a particular board starts on it; otherwise on the home screen.
+  useEffect(() => {
+    void startBoard()
+      .then((id) => (id ? loadBoard(id) : null))
+      .then(
+        (doc) => (doc ? show(doc) : setScreen({ name: "home" })),
+        () => setScreen({ name: "home" }),
+      );
+  }, [show]);
+
   const open = useCallback(
     async (doc: BoardDoc) => {
+      // Already open in another window: that window comes forward instead.
+      if (!(await claimBoard(doc.id))) return;
       await leaveBoard();
       setTrail([]);
       show(doc);
@@ -63,6 +90,10 @@ export default function App() {
       if (from?.id === id) return;
       const doc = await loadBoard(id);
       if (!doc) return;
+      if (!(await claimBoard(id))) {
+        focusOnOpen(null);
+        return;
+      }
       await leaveBoard();
       setTrail((t) => (from ? [...t, from] : []));
       show(doc);
@@ -73,14 +104,19 @@ export default function App() {
     const prev = trail[trail.length - 1];
     if (!prev) return;
     const doc = await loadBoard(prev.id);
+    if (doc && !(await claimBoard(doc.id))) return;
     await leaveBoard();
     setTrail((t) => t.slice(0, -1));
     if (doc) show(doc);
-    else setScreen({ name: "home" });
+    else {
+      void claimBoard(null);
+      setScreen({ name: "home" });
+    }
   }, [trail, leaveBoard, show]);
 
   const goHome = useCallback(async () => {
     await leaveBoard();
+    await claimBoard(null);
     setTrail([]);
     setScreen({ name: "home" });
   }, [leaveBoard]);
@@ -106,6 +142,10 @@ export default function App() {
           void goBack();
           return true;
         }
+        if (id === "new-window") {
+          void openWindow();
+          return true;
+        }
         if (id === "new-board") {
           void createBoard(makeBoardDoc("Untitled board")).then(open);
           return true;
@@ -121,6 +161,7 @@ export default function App() {
     [goHome, goBack, open],
   );
 
+  if (screen.name === "starting") return null;
   if (screen.name === "home") return <Home onOpen={(doc) => void open(doc)} />;
   return (
     <ReactFlowProvider key={screen.id}>

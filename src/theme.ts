@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { isTauri } from "./persistence";
+import { hearOtherWindows, tellOtherWindows } from "./windows";
 
 export type ThemeSetting = "system" | "light" | "dark";
 export type Theme = "light" | "dark";
@@ -42,6 +43,11 @@ export function initTheme() {
   media?.addEventListener("change", () => {
     if (setting === "system") apply();
   });
+  // Switching the theme in one window switches it in all of them.
+  void hearOtherWindows<ThemeSetting>("theme", (next) => {
+    setting = next;
+    apply();
+  });
 }
 
 export function setThemeSetting(next: ThemeSetting) {
@@ -52,6 +58,7 @@ export function setThemeSetting(next: ThemeSetting) {
     // Not being able to remember the choice is harmless.
   }
   apply();
+  void tellOtherWindows("theme", next);
 }
 
 const subscribe = (l: () => void) => {

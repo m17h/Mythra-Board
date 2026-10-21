@@ -1,10 +1,10 @@
-//! The app's menu bar. Custom items send their id to the page as a "menu" event; the page
+//! The app's menu bar. Custom items send their id to the window in use as a "menu" event; the page
 //! decides what to do (and ignores items that don't apply, e.g. board actions on the home
 //! screen). Standard editing items use the system's own versions so text fields behave
 //! exactly as they do everywhere else.
 
 use tauri::menu::{AboutMetadata, Menu, MenuItem, MenuItemBuilder, Submenu, SubmenuBuilder};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Runtime};
 
 fn item<R: Runtime>(app: &AppHandle<R>, id: &str, label: &str, accelerator: Option<&str>) -> tauri::Result<MenuItem<R>> {
     let mut b = MenuItemBuilder::with_id(id, label);
@@ -43,6 +43,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         "File",
         &[
             ("new-board", "New Board", Some("CmdOrCtrl+N")),
+            ("new-window", "New Window", Some("CmdOrCtrl+Shift+N")),
             ("open-file", "Open Board File…", Some("CmdOrCtrl+O")),
             SEP,
             ("all-boards", "All Boards", None),
@@ -113,9 +114,4 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let help = submenu(app, "Help", &[("shortcuts", "Keyboard Shortcuts", Some("CmdOrCtrl+/"))])?;
 
     Menu::with_items(app, &[&app_menu, &file, &edit, &view, &arrange, &window, &help])
-}
-
-/// Forward custom menu choices to the page.
-pub fn forward<R: Runtime>(app: &AppHandle<R>, id: &str) {
-    let _ = app.emit("menu", id);
 }

@@ -48,7 +48,12 @@ export async function listenToMenu() {
     true,
   );
   const { listen } = await import("@tauri-apps/api/event");
-  await listen<string>("menu", (e) => dispatchMenu(e.payload));
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const me = getCurrentWindow().label;
+  // Every window hears menu choices; only the one in use acts on them.
+  await listen<{ id: string; window: string }>("menu", (e) => {
+    if (e.payload.window === me) dispatchMenu(e.payload.id);
+  });
 }
 
 /** Whether keyboard focus is in a text field (so board actions should stay out of the way). */

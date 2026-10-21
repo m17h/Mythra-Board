@@ -1,6 +1,7 @@
 import { createStore, useStore } from "zustand";
-import { listBoards, newBoardId, writeBoard } from "./persistence";
-import type { BoardDoc } from "./store";
+import { listBoards, loadBoard, newBoardId, writeBoard } from "./persistence";
+import { boardStore, type BoardDoc } from "./store";
+import { boardsOpenElsewhere, hearOtherWindows, tellOtherWindows } from "./windows";
 import type { BoardBackground, BoardNode, BoardStyle, LinkEdge } from "./types";
 
 /** Every saved board, kept for board cards, links, backlinks and the command palette. */
@@ -100,23 +101,46 @@ export function retitleText(text: string, oldTitle: string, newTitle: string): s
  * so the links keep working. Skipped if another board still has the old name.
  * Returns how many boards were updated.
  */
+/** Nodes with links to `oldTitle` pointed at `newTitle`, or null if none needed changing. */
+function retitleNodes<T extends BoardDoc["nodes"][number]>(nodes: T[], oldTitle: string, newTitle: string): T[] | null {
+  let touched = false;
+  const out = nodes.map((n) => {
+    const text = retitleText(n.data.text, oldTitle, newTitle);
+    const title = n.data.title === undefined ? undefined : retitleText(n.data.title, oldTitle, newTitle);
+    if (text === n.data.text && title === n.data.title) return n;
+    touched = true;
+    return { ...n, data: { ...n.data, text, ...(title === undefined ? {} : { title }) } };
+  });
+  return touched ? out : null;
+}
+
+/** Keep links on the board open in this window right when a board is renamed in another. */
+export function followRenamesFromOtherWindows() {
+  void hearOtherWindows<{ oldTitle: string; newTitle: string; boardId: string }>("links-renamed", ({ oldTitle, newTitle, boardId }) => {
+    const s = boardStore.getState();
+    if (!s.boardId || s.boardId === boardId) return;
+    const nodes = retitleNodes(s.nodes, oldTitle, newTitle);
+    if (nodes) boardStore.setState({ nodes });
+    const listed = boardIndex().find((b) => b.id === boardId);
+    if (listed) updateIndexedBoard({ ...listed, title: newTitle });
+  });
+}
+
 export async function renameLinks(oldTitle: string, newTitle: string, boardId: string): Promise<number> {
   if (!oldTitle.trim() || oldTitle.trim().toLocaleLowerCase() === newTitle.trim().toLocaleLowerCase()) return 0;
   if (!indexStore.getState().loaded) await refreshBoardIndex();
   const boards = boardIndex();
   if (boards.some((b) => b.id !== boardId && sameTitle(b.title, oldTitle))) return 0;
+  // Boards open in other windows are updated by those windows, so they aren't overwritten here.
+  void tellOtherWindows("links-renamed", { oldTitle, newTitle, boardId });
+  const elsewhere = await boardsOpenElsewhere();
   let changed = 0;
-  for (const b of boards) {
-    if (b.id === boardId) continue;
-    let touched = false;
-    const nodes = b.nodes.map((n) => {
-      const text = retitleText(n.data.text, oldTitle, newTitle);
-      const title = n.data.title === undefined ? undefined : retitleText(n.data.title, oldTitle, newTitle);
-      if (text === n.data.text && title === n.data.title) return n;
-      touched = true;
-      return { ...n, data: { ...n.data, text, ...(title === undefined ? {} : { title }) } };
-    });
-    if (!touched) continue;
+  for (const listed of boards) {
+    if (listed.id === boardId || elsewhere.has(listed.id) || !retitleNodes(listed.nodes, oldTitle, newTitle)) continue;
+    // Another window may have changed it since the list was read, so work from the saved copy.
+    const b = (await loadBoard(listed.id).catch(() => null)) ?? listed;
+    const nodes = retitleNodes(b.nodes, oldTitle, newTitle);
+    if (!nodes) continue;
     const doc = { ...b, nodes, updatedAt: Date.now() };
     try {
       await writeBoard(doc, b.updatedAt);

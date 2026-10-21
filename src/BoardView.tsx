@@ -22,6 +22,7 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { onMenu, typingNow, undoText } from "./menuEvents";
 import { notify, setNotifier } from "./notify";
 import { saveAsTemplate } from "./templates";
+import { canOpenWindows, openWindow } from "./windows";
 import { isMac, keyLabel } from "./platform";
 import { FindBar } from "./components/FindBar";
 import { FormatToolbar } from "./components/FormatToolbar";
@@ -50,6 +51,7 @@ import {
   FileIcon,
   FitIcon,
   HistoryIcon,
+  NewWindowIcon,
   PresentIcon,
   HelpIcon,
   MapIcon,
@@ -248,6 +250,9 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           run: () => void saveAsTemplate(boardStore.getState()).then(() => setNotice("Saved as a template. Find it on the home screen.")),
         },
         { id: "board:file", group: "Board", label: "Save a board file…", icon: <FileIcon />, keywords: "backup share export mythra", run: () => setExportOpen("mythra") },
+        ...(canOpenWindows()
+          ? [{ id: "app:window", group: "Board", label: "New window", keys: "⇧⌘N", icon: <NewWindowIcon />, keywords: "second another side by side", run: () => void openWindow() }]
+          : []),
       ],
     }),
     [viewCenter, pickImage, exportPng, onHome, back, onBack, present, boardStyle],

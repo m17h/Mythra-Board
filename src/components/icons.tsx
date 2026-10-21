@@ -215,6 +215,12 @@ export const DuplicateIcon = () => (
     <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
   </Icon>
 );
+export const NewWindowIcon = () => (
+  <Icon>
+    <rect x="3.5" y="6" width="13" height="13" rx="2.5" />
+    <path d="M8 3.5h10a2.5 2.5 0 0 1 2.5 2.5v10" />
+  </Icon>
+);
 export const RenameIcon = () => (
   <Icon>
     <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z" />
