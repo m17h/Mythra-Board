@@ -26,6 +26,8 @@ import {
 } from "./persistence";
 import { boardStore, type BoardDoc } from "./store";
 import { claimBoard, onWindowFocus, openWindow, startBoard } from "./windows";
+import { checkNowAndThen, saveWhenAsked } from "./updates";
+import { UpdateNotice } from "./components/UpdateNotice";
 
 type Screen = { name: "starting" } | { name: "home" } | { name: "board"; id: string };
 export type TrailStep = { id: string; title: string };
@@ -43,6 +45,8 @@ export default function App() {
     void saveOnQuit();
     void listenToMenu();
     followRenamesFromOtherWindows();
+    saveWhenAsked();
+    checkNowAndThen();
   }, []);
 
   // Other windows may have changed boards: catch up (for links and backlinks) on coming back.
@@ -162,15 +166,21 @@ export default function App() {
   );
 
   if (screen.name === "starting") return null;
-  if (screen.name === "home") return <Home onOpen={(doc) => void open(doc)} />;
   return (
-    <ReactFlowProvider key={screen.id}>
-      <BoardView
-        status={status}
-        onHome={() => void goHome()}
-        back={trail[trail.length - 1] ?? null}
-        onBack={() => void goBack()}
-      />
-    </ReactFlowProvider>
+    <>
+      {screen.name === "home" ? (
+        <Home onOpen={(doc) => void open(doc)} />
+      ) : (
+        <ReactFlowProvider key={screen.id}>
+          <BoardView
+            status={status}
+            onHome={() => void goHome()}
+            back={trail[trail.length - 1] ?? null}
+            onBack={() => void goBack()}
+          />
+        </ReactFlowProvider>
+      )}
+      <UpdateNotice />
+    </>
   );
 }

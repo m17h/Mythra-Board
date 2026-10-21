@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AI_MODELS, aiSupported, clearKey, getModel, hasKey, saveKey, setModel, type AiModel } from "../ai";
 import { formatBytes } from "../images";
 import { cleanupFiles, isTauri } from "../persistence";
+import { autoCheckEnabled, checkForUpdate, installUpdate, setAutoCheck, useUpdateState } from "../updates";
 import { useEscape } from "../useDismiss";
 import { ThemeSwitch } from "./ThemeSwitch";
 
@@ -24,6 +25,8 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
   const [keyDraft, setKeyDraft] = useState("");
   const [model, setModelState] = useState<AiModel>(getModel());
   const [version, setVersion] = useState("");
+  const [autoUpdate, setAutoUpdate] = useState(autoCheckEnabled);
+  const update = useUpdateState();
   useEscape(onClose);
 
   useEffect(() => {
@@ -202,6 +205,48 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
             </>
           )}
         </div>
+
+        {desktop && (
+          <div className="dialog__section">
+            <div className="popover__label">Updates</div>
+            <div className="settings__row">
+              {update.stage === "available" ? (
+                <button type="button" className="primary-btn" onClick={() => void installUpdate()}>
+                  Update to {update.version}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  disabled={update.stage === "checking" || update.stage === "downloading"}
+                  onClick={() => void checkForUpdate()}
+                >
+                  {update.stage === "checking" ? "Checking…" : "Check for updates"}
+                </button>
+              )}
+              <span className="settings__note">
+                {update.stage === "current"
+                  ? "You have the latest version."
+                  : update.stage === "downloading"
+                    ? `Downloading ${update.version}${update.percent === null ? "…" : ` (${update.percent}%)`}`
+                    : update.stage === "error"
+                      ? update.message
+                      : ""}
+              </span>
+            </div>
+            <label className="settings__check">
+              <input
+                type="checkbox"
+                checked={autoUpdate}
+                onChange={(e) => {
+                  setAutoCheck(e.target.checked);
+                  setAutoUpdate(e.target.checked);
+                }}
+              />
+              Check for new versions automatically
+            </label>
+          </div>
+        )}
 
         {message && <div className="settings__message">{message}</div>}
 

@@ -1252,6 +1252,49 @@ kbd {
   cursor: pointer;
 }
 
+.settings__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.settings__check input {
+  accent-color: var(--accent);
+}
+
+.update-notice {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 360px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  font-size: 13px;
+  animation: rise 0.16s ease-out;
+}
+/* The home screen's buttons sit top right, so there it goes bottom right. */
+.app.home + .update-notice {
+  top: auto;
+  bottom: 24px;
+}
+.update-notice__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.update-notice__text span {
+  color: var(--muted);
+}
+
 /* ---------- Home ---------- */
 
 .home {
