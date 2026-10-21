@@ -28,6 +28,7 @@ function LinkLine({ id, data, selected }: EdgeProps<LinkEdge>) {
       {(d.label || editingLabel) && (
         <EdgeLabelRenderer>
           <div
+            data-edge={id}
             className={`link-label nodrag nopan${selected ? " is-selected" : ""}`}
             style={{ transform: `translate(-50%, -50%) translate(${geo.labelX}px, ${geo.labelY}px)` }}
             onClick={() => boardStore.getState().selectOnly([], [id])}

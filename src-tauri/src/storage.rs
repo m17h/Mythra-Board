@@ -58,15 +58,30 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::rename(&tmp, path)
 }
 
+/// Automatic history snapshots are at least this far apart.
+const SNAPSHOT_EVERY_MS: u128 = 10 * 60 * 1000;
+/// How many snapshots to keep per board.
+const SNAPSHOT_LIMIT: usize = 60;
+
 pub struct Storage {
     boards: PathBuf,
     trash: PathBuf,
     assets: PathBuf,
+    history: PathBuf,
+}
+
+fn now_ms() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
 }
 
 impl Storage {
     pub fn new(root: &Path) -> Self {
-        Storage { boards: root.join("boards"), trash: root.join("trash"), assets: root.join("assets") }
+        Storage {
+            boards: root.join("boards"),
+            trash: root.join("trash"),
+            assets: root.join("assets"),
+            history: root.join("history"),
+        }
     }
 
     fn main_path(&self, id: &str) -> PathBuf {
@@ -96,7 +111,59 @@ impl Storage {
         if main.exists() {
             fs::copy(&main, self.backup_path(id))?;
         }
-        write_atomic(&main, json.as_bytes())
+        write_atomic(&main, json.as_bytes())?;
+        // History is a bonus; a failure here must never fail the save itself.
+        let _ = self.snapshot(id, json, false);
+        Ok(())
+    }
+
+    fn history_dir(&self, id: &str) -> PathBuf {
+        self.history.join(id)
+    }
+
+    /// Snapshot times (ms since 1970), newest first.
+    pub fn versions(&self, id: &str) -> io::Result<Vec<u64>> {
+        let id = safe_id(id)?;
+        let entries = match fs::read_dir(self.history_dir(id)) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(vec![]),
+            Err(e) => return Err(e),
+        };
+        let mut times: Vec<u64> = entries
+            .filter_map(|e| e.ok())
+            .filter_map(|e| e.file_name().to_str()?.strip_suffix(".json")?.parse().ok())
+            .collect();
+        times.sort_unstable_by(|a, b| b.cmp(a));
+        Ok(times)
+    }
+
+    pub fn load_version(&self, id: &str, time: u64) -> io::Result<String> {
+        let id = safe_id(id)?;
+        fs::read_to_string(self.history_dir(id).join(format!("{time}.json")))
+    }
+
+    /// Keep a copy of the board in its history. Unless `force`, only when the last copy is
+    /// at least ten minutes old. Old copies beyond the limit are removed.
+    pub fn snapshot(&self, id: &str, json: &str, force: bool) -> io::Result<bool> {
+        let id = safe_id(id)?;
+        let now = now_ms();
+        let versions = self.versions(id)?;
+        if !force && versions.first().is_some_and(|&t| now.saturating_sub(t as u128) < SNAPSHOT_EVERY_MS) {
+            return Ok(false);
+        }
+        let dir = self.history_dir(id);
+        fs::create_dir_all(&dir)?;
+        // Don't store an identical copy twice in a row.
+        if let Some(&latest) = versions.first() {
+            if fs::read_to_string(dir.join(format!("{latest}.json"))).is_ok_and(|prev| prev == json) {
+                return Ok(false);
+            }
+        }
+        write_atomic(&dir.join(format!("{now}.json")), json.as_bytes())?;
+        for old in versions.iter().skip(SNAPSHOT_LIMIT - 1) {
+            let _ = fs::remove_file(dir.join(format!("{old}.json")));
+        }
+        Ok(true)
     }
 
     /// Every readable board as `(id, json)`.
@@ -216,6 +283,24 @@ mod tests {
         assert!(s.list().unwrap().is_empty());
         s.restore("a").unwrap();
         assert_eq!(s.load("a").unwrap().as_deref(), Some(r#"{"v":1}"#));
+    }
+
+    #[test]
+    fn keeps_spaced_out_history() {
+        let (_d, s) = store();
+        s.save("a", r#"{"v":1}"#).unwrap();
+        // A save straight after doesn't add another snapshot...
+        s.save("a", r#"{"v":2}"#).unwrap();
+        assert_eq!(s.versions("a").unwrap().len(), 1);
+        // ...but a forced one does (unless nothing changed).
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        assert!(s.snapshot("a", r#"{"v":2}"#, true).unwrap());
+        assert!(!s.snapshot("a", r#"{"v":2}"#, true).unwrap());
+        let v = s.versions("a").unwrap();
+        assert_eq!(v.len(), 2);
+        assert!(v[0] > v[1]);
+        assert_eq!(s.load_version("a", v[1]).unwrap(), r#"{"v":1}"#);
+        assert!(s.load_version("../a", v[1]).is_err());
     }
 
     #[test]

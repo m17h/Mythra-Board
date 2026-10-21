@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DuplicateIcon, MoreIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
+import { DuplicateIcon, FileIcon, MoreIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import Thumbnail from "./components/Thumbnail";
 import { createBoard, makeBoardDoc, refreshBoardIndex, updateIndexedBoard } from "./navigation";
-import { isTauri, newBoardId, restoreBoard, trashBoard, writeBoard } from "./persistence";
+import { exportBoardFile, importBoardFile } from "./boardFile";
+import { isTauri, newBoardId, pickBoardFile, restoreBoard, trashBoard, writeBoard } from "./persistence";
 import type { BoardDoc } from "./store";
 import { TEMPLATES, type Template } from "./templates";
 
@@ -78,11 +79,35 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
       } else if (e.key.toLowerCase() === "f") {
         e.preventDefault();
         search.current?.focus();
+      } else if (e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        void openFile();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  const openFile = async () => {
+    try {
+      const text = await pickBoardFile();
+      if (!text) return;
+      const doc = await importBoardFile(text);
+      onOpen(doc);
+    } catch (err) {
+      console.error(err);
+      setToast({ message: err instanceof Error ? err.message : "Couldn't open that file" });
+    }
+  };
+
+  const saveCopy = async (doc: BoardDoc) => {
+    try {
+      if (await exportBoardFile(doc)) setToast({ message: `Saved “${doc.title}” as a board file` });
+    } catch (err) {
+      console.error(err);
+      setToast({ message: "Couldn't save the board file" });
+    }
+  };
 
   const replace = (doc: BoardDoc) => setBoards((bs) => bs && bs.map((b) => (b.id === doc.id ? doc : b)));
 
@@ -184,6 +209,10 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
             setMenuId(null);
             void remove(doc);
           }}
+          onExport={() => {
+            setMenuId(null);
+            void saveCopy(doc);
+          }}
         />
       ))}
     </div>
@@ -217,6 +246,10 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
             />
           </label>
           <ThemeSwitch />
+          <button type="button" className="secondary-btn secondary-btn--icon" onClick={() => void openFile()} title="Open a board file (⌘O)">
+            <FileIcon />
+            Open file
+          </button>
           <button type="button" className="primary-btn" onClick={() => void create(TEMPLATES[0])} title="New board (⌘N)">
             <PlusIcon />
             New board
@@ -311,6 +344,7 @@ function BoardCard({
   onPin,
   onDuplicate,
   onDelete,
+  onExport,
 }: {
   doc: BoardDoc;
   renaming: boolean;
@@ -321,6 +355,7 @@ function BoardCard({
   onStartRename: () => void;
   onPin: () => void;
   onDuplicate: () => void;
+  onExport: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -371,6 +406,9 @@ function BoardCard({
               </button>
               <button type="button" role="menuitem" className="menu__item" onClick={onDuplicate}>
                 <DuplicateIcon /> Duplicate
+              </button>
+              <button type="button" role="menuitem" className="menu__item" onClick={onExport}>
+                <FileIcon /> Save as board file…
               </button>
               <button type="button" role="menuitem" className="menu__item" onClick={onPin}>
                 <StarIcon /> {doc.pinned ? "Unpin" : "Pin to top"}

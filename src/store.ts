@@ -228,6 +228,8 @@ export type BoardState = {
   /** Line items up along an edge or centre, or space them evenly. */
   arrange: (ids: string[], mode: ArrangeMode) => void;
   setSnapping: (on: boolean) => void;
+  /** Swap in different content (e.g. an older version) as one undoable step. */
+  replaceContent: (nodes: BoardNode[], edges: LinkEdge[]) => void;
   copySelection: () => Clip | null;
   paste: (clip: Clip, at?: Point) => void;
   duplicateSelection: () => void;
@@ -928,6 +930,11 @@ export function createBoardStore() {
         record(() =>
           set((s) => ({ nodes: s.nodes.map((n) => (moves.has(n.id) ? { ...n, position: moves.get(n.id)! } : n)) })),
         );
+      },
+
+      replaceContent: (nodes, edges) => {
+        get().stopEditing();
+        record(() => set({ nodes: withFramesFirst(nodes.map(decorate)), edges }));
       },
 
       setSnapping: (snapping) => {

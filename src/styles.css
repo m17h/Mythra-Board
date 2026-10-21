@@ -2462,3 +2462,201 @@ svg.is-locked::before {
 .react-flow__node:focus-visible {
   outline: none;
 }
+
+/* ---------- Dialogs and side panels ---------- */
+
+.dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 51;
+  width: min(460px, calc(100vw - 40px));
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: rise 0.14s ease-out;
+}
+.dialog__title {
+  font-size: 17px;
+  font-weight: 700;
+}
+.dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dialog__toggle {
+  padding: 4px 2px;
+}
+.dialog__toggle:hover {
+  background: transparent;
+}
+.dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dialog__spacer {
+  flex: 1;
+}
+.format-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.format-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.format-option:hover {
+  background: var(--hover);
+}
+.format-option.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.format-option__name {
+  font-size: 14px;
+  font-weight: 650;
+}
+.format-option.is-active .format-option__name {
+  color: var(--accent);
+}
+.format-option__desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.segmented__item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.secondary-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-solid);
+  font-size: 13.5px;
+  font-weight: 550;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.secondary-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+.secondary-btn:disabled,
+.primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.secondary-btn--icon {
+  height: 38px;
+}
+.secondary-btn svg {
+  width: 17px;
+  height: 17px;
+  color: var(--muted);
+}
+.dialog .primary-btn {
+  height: 36px;
+  padding: 0 16px;
+}
+
+.side-panel {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  bottom: 72px;
+  z-index: 25;
+  width: 320px;
+  padding: 8px 14px 14px;
+  border-radius: 14px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: rise 0.14s ease-out;
+}
+.side-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 650;
+  font-size: 14px;
+  padding: 6px 0 2px;
+}
+.version-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.version-preview__thumb {
+  height: 150px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background-color: var(--bg);
+}
+.version-preview__meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.version-preview__restore {
+  justify-content: center;
+  height: 34px;
+}
+.version-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 -6px;
+}
+.version-list__empty {
+  padding: 10px 6px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.version-item {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.version-item:hover {
+  background: var(--hover);
+}
+.version-item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* On boards, messages sit above the dock instead of covering it. */
+.board .toast {
+  bottom: 76px;
+}

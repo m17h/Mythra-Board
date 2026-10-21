@@ -15,7 +15,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import type { TrailStep } from "./App";
 import { useBoardCommands, type BoardActions } from "./boardCommands";
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import { ExportDialog } from "./components/ExportDialog";
 import { FindBar } from "./components/FindBar";
+import { VersionHistory } from "./components/VersionHistory";
 import type { Point } from "./geometry";
 import { hiddenItems } from "./mindmap";
 import {
@@ -34,7 +36,9 @@ import {
   BackIcon,
   BoardLinkIcon,
   BoardsIcon,
+  FileIcon,
   FitIcon,
+  HistoryIcon,
   HelpIcon,
   MapIcon,
   MinusIcon,
@@ -118,30 +122,15 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
     void refreshBoardIndex();
   }, []);
 
-  const exportPng = useCallback(async () => {
-    const s = boardStore.getState();
-    if (!s.nodes.length) {
-      setNotice("Add something to the board first");
-      return;
-    }
-    s.stopEditing();
-    s.clearSelection();
-    setNotice("Exporting…");
-    // Let the deselection paint so selection outlines don't end up in the picture.
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    try {
-      // Loaded on first use so it doesn't slow down opening the app.
-      const { exportBoardPng } = await import("./exportImage");
-      const saved = await exportBoardPng(boardStore.getState().nodes, s.title);
-      setNotice(saved ? "Exported" : null);
-    } catch (err) {
-      console.error("Export failed", err);
-      setNotice("Couldn't export the board");
-    }
+  const [exportOpen, setExportOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const exportPng = useCallback(() => {
+    boardStore.getState().stopEditing();
+    setExportOpen(true);
   }, []);
 
   useEffect(() => {
-    if (!notice || notice === "Exporting…") return;
+    if (!notice || notice.endsWith("…")) return;
     const t = setTimeout(() => setNotice(null), 2500);
     return () => clearTimeout(t);
   }, [notice]);
@@ -173,7 +162,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
     toggleMap: () => setShowMap((v) => !v),
     pickImage,
     goHome: backOrHome,
-    exportPng: () => void exportPng(),
+    exportPng,
     openPalette: () => setPalette(true),
     openFind: () => setFindOpen(true),
   });
@@ -185,10 +174,14 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       pickImage,
       toggleMap: () => setShowMap((v) => !v),
       toggleHelp: () => setShowHelp((v) => !v),
-      exportPng: () => void exportPng(),
+      exportPng,
       goHome: onHome,
       goBack: back ? onBack : undefined,
       openBoardById: (id) => void openBoard(id),
+      extra: [
+        { id: "board:history", group: "Board", label: "Version history…", icon: <HistoryIcon />, keywords: "restore undo backup", run: () => setHistoryOpen(true) },
+        { id: "board:file", group: "Board", label: "Save a board file…", icon: <FileIcon />, keywords: "backup share export mythra", run: () => setExportOpen(true) },
+      ],
     }),
     [viewCenter, pickImage, exportPng, onHome, back, onBack],
   );
@@ -376,7 +369,14 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         )}
       </ReactFlow>
 
-      <TitleBar status={status} onHome={onHome} back={back} onBack={onBack} onExport={() => void exportPng()} />
+      <TitleBar
+        status={status}
+        onHome={onHome}
+        back={back}
+        onBack={onBack}
+        onExport={exportPng}
+        onHistory={() => setHistoryOpen(true)}
+      />
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
       {pickerAt && <BoardPicker at={pickerAt} onClose={() => setPickerAt(null)} />}
@@ -438,11 +438,13 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       </div>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} onNotice={setNotice} />}
+      {historyOpen && <VersionHistory onClose={() => setHistoryOpen(false)} onNotice={setNotice} />}
       {menu && (
         <ContextMenu
           target={menu}
           onClose={() => setMenu(null)}
-          onExport={() => void exportPng()}
+          onExport={exportPng}
           onPickBoard={(at) => setPickerAt(at)}
         />
       )}
@@ -537,12 +539,14 @@ function TitleBar({
   back,
   onBack,
   onExport,
+  onHistory,
 }: {
   status: SaveStatus;
   onHome: () => void;
   back: TrailStep | null;
   onBack: () => void;
   onExport: () => void;
+  onHistory: () => void;
 }) {
   const title = useBoard((s) => s.title);
   const boardId = useBoard((s) => s.boardId);
@@ -675,8 +679,18 @@ function TitleBar({
                   onExport();
                 }}
               >
-                <span>Export as PNG…</span>
+                <span>Export…</span>
                 <kbd className="menu__keys">⇧⌘E</kbd>
+              </button>
+              <button
+                type="button"
+                className="menu__item"
+                onClick={() => {
+                  setMenu(false);
+                  onHistory();
+                }}
+              >
+                <span>Version history…</span>
               </button>
             </div>
           </>

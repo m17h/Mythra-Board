@@ -153,7 +153,7 @@ export function useBoardCommands(actions: BoardActions, open: boolean): Command[
     for (const b of BACKGROUNDS)
       add("Board", { label: `Background: ${b[0].toUpperCase()}${b.slice(1)}`, run: () => s.setBackground(b) });
     add("Board", { label: s.snapping ? "Turn off snapping" : "Turn on snapping", run: () => s.setSnapping(!s.snapping) });
-    add("Board", { label: "Export as PNG…", keys: "⇧⌘E", run: actions.exportPng });
+    add("Board", { label: "Export…", keys: "⇧⌘E", keywords: "png svg pdf picture image", run: actions.exportPng });
     add("Board", {
       label: "Rename board",
       run: () => document.querySelector<HTMLInputElement>(".title-input")?.focus(),

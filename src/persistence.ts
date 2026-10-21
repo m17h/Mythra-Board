@@ -284,13 +284,28 @@ export async function restoreBoard(id: string): Promise<void> {
 
 const IDB_NAME = "mythra-board-assets";
 
+let db: Promise<IDBDatabase> | null = null;
+
+/** One shared connection to the browser's picture store, opened on first use. */
 function idb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+  db ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, 1);
     req.onupgradeneeded = () => req.result.createObjectStore("assets");
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const conn = req.result;
+      // Step aside if the store is being upgraded or deleted elsewhere.
+      conn.onversionchange = () => {
+        conn.close();
+        db = null;
+      };
+      resolve(conn);
+    };
+    req.onerror = () => {
+      db = null;
+      reject(req.error);
+    };
   });
+  return db;
 }
 
 async function idbRun<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
@@ -439,4 +454,110 @@ export async function openExternal(url: string): Promise<void> {
   } else {
     window.open(url, "_blank", "noopener");
   }
+}
+
+// ---------- Version history ----------
+
+const LOCAL_HISTORY = "mythra-board:history:";
+const LOCAL_HISTORY_LIMIT = 20;
+
+type LocalVersion = { t: number; json: string };
+const readLocalHistory = (id: string): LocalVersion[] => {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_HISTORY + id) ?? "[]");
+  } catch {
+    return [];
+  }
+};
+
+/** When each saved version of a board was taken, newest first. */
+export async function listVersions(id: string): Promise<number[]> {
+  if (isTauri()) return invoke<number[]>("list_versions", { id });
+  return readLocalHistory(id)
+    .map((v) => v.t)
+    .sort((a, b) => b - a);
+}
+
+export async function loadVersion(id: string, time: number): Promise<BoardDoc> {
+  const json = isTauri()
+    ? await invoke<string>("load_version", { id, time })
+    : readLocalHistory(id).find((v) => v.t === time)?.json;
+  if (!json) throw new Error("That version is missing");
+  return { ...fromSaved(JSON.parse(json), id), id };
+}
+
+/** Save a version of the board right now (e.g. before restoring an older one). */
+export async function snapshotNow(doc: BoardDoc): Promise<void> {
+  const json = JSON.stringify(toSaved(doc));
+  if (isTauri()) {
+    await invoke("snapshot_board", { id: doc.id, json });
+    return;
+  }
+  const versions = readLocalHistory(doc.id);
+  if (versions[0]?.json === json) return;
+  versions.unshift({ t: Date.now(), json });
+  localStorage.setItem(LOCAL_HISTORY + doc.id, JSON.stringify(versions.slice(0, LOCAL_HISTORY_LIMIT)));
+}
+
+// ---------- Files ----------
+
+export type FileKind = "png" | "svg" | "pdf" | "mythra";
+const MIME: Record<FileKind, string> = {
+  png: "image/png",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  mythra: "application/json",
+};
+
+/** Turn a board title into a safe file name. */
+export const fileNameFor = (title: string, kind: FileKind) =>
+  `${title.replace(/[^A-Za-z0-9 _-]+/g, "").trim().slice(0, 80) || "Board"}.${kind}`;
+
+/** Ask where to save a file and write it. Returns false if the user cancelled. */
+export async function saveFile(bytes: Uint8Array, name: string, kind: FileKind): Promise<boolean> {
+  if (isTauri()) return invoke<boolean>("export_file", bytes, { headers: { "file-name": name, "file-kind": kind } });
+  const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: MIME[kind] }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return true;
+}
+
+/** Let the user pick a .mythra board file; returns its text, or null if they cancelled. */
+export async function pickBoardFile(): Promise<string | null> {
+  if (isTauri()) return invoke<string | null>("open_board_file");
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".mythra,application/json";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return resolve(null);
+      file.text().then(resolve, () => resolve(null));
+    };
+    input.addEventListener("cancel", () => resolve(null));
+    input.click();
+  });
+}
+
+/** Put a picture on the clipboard. */
+export async function copyImageToClipboard(canvas: HTMLCanvasElement): Promise<void> {
+  if (isTauri()) {
+    const pixels = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+    await invoke("copy_image", new Uint8Array(pixels.buffer), {
+      headers: { "image-width": String(canvas.width), "image-height": String(canvas.height) },
+    });
+    return;
+  }
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("no image"))), "image/png"));
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+}
+
+export async function loadAssetBytes(name: string): Promise<Uint8Array> {
+  if (isTauri()) return new Uint8Array(await invoke<ArrayBuffer>("load_asset", { name }));
+  const bytes = await idbRun<Uint8Array | undefined>("readonly", (s) => s.get(name));
+  if (!bytes) throw new Error(`Missing image ${name}`);
+  return bytes;
 }

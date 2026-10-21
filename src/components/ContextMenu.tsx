@@ -118,7 +118,7 @@ export function ContextMenu({
       { label: "Tidy up mind maps", run: () => void s.tidyUp() },
       { label: s.snapping ? "Turn off snapping" : "Turn on snapping", run: () => s.setSnapping(!s.snapping) },
       "divider",
-      { label: "Export as PNG…", keys: "⇧⌘E", run: onExport },
+      { label: "Export…", keys: "⇧⌘E", run: onExport },
     ];
   }
 
