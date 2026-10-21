@@ -2660,3 +2660,232 @@ svg.is-locked::before {
 .board .toast {
   bottom: 76px;
 }
+
+/* ---------- Fill styles ---------- */
+
+.note.fill--light,
+.shape--rect.fill--light,
+.shape--ellipse.fill--light,
+.frame.fill--light {
+  background: color-mix(in srgb, var(--soft) 45%, transparent);
+}
+.note.fill--none,
+.shape--rect.fill--none,
+.shape--ellipse.fill--none,
+.frame.fill--none {
+  background: transparent;
+  box-shadow: none;
+}
+.note.fill--hatch,
+.shape--rect.fill--hatch,
+.shape--ellipse.fill--hatch,
+.frame.fill--hatch {
+  background:
+    repeating-linear-gradient(-45deg, color-mix(in srgb, var(--strong) 38%, transparent) 0 1.4px, transparent 1.4px 8px),
+    color-mix(in srgb, var(--soft) 55%, transparent);
+}
+.note.fill--none:not(.has-outline) {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--text) 25%, transparent);
+}
+.fill--light .shape__outline path:not(.shape__detail) {
+  fill-opacity: 0.45;
+}
+.fill--none .shape__outline path {
+  fill: none;
+}
+.fill--hatch.color--plain .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-plain); }
+.fill--hatch.color--yellow .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-yellow); }
+.fill--hatch.color--orange .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-orange); }
+.fill--hatch.color--pink .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-pink); }
+.fill--hatch.color--purple .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-purple); }
+.fill--hatch.color--blue .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-blue); }
+.fill--hatch.color--green .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-green); }
+
+.fill-sample {
+  width: 26px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--strong);
+  background: var(--soft);
+}
+.fill-sample--light {
+  background: color-mix(in srgb, var(--soft) 45%, transparent);
+}
+.fill-sample--none {
+  background: transparent;
+}
+.fill-sample--hatch {
+  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--strong) 50%, transparent) 0 1.4px, transparent 1.4px 5px), var(--soft);
+}
+
+/* ---------- Hand-drawn style ---------- */
+
+.board-defs {
+  position: absolute;
+  overflow: hidden;
+}
+.item-sketch {
+  display: none;
+}
+.style-sketchy .react-flow__node,
+.style-sketchy .link-label {
+  font-family: "Kalam", var(--font);
+}
+.style-sketchy .item-editor {
+  font-family: "Kalam", var(--font);
+}
+/* Swap crisp borders for a wobbly hand-drawn line on its own layer, so text stays sharp. */
+.style-sketchy .note,
+.style-sketchy .shape--rect,
+.style-sketchy .shape--ellipse,
+.style-sketchy .frame,
+.style-sketchy .image,
+.style-sketchy .textitem.has-outline {
+  border-color: transparent !important;
+  box-shadow: none;
+}
+.style-sketchy .item-sketch {
+  display: block;
+  position: absolute;
+  inset: -1px;
+  border: max(var(--ow, 1.6px), 1.6px) var(--os, solid) var(--oc, var(--sketch-ink));
+  border-radius: inherit;
+  filter: url(#mb-rough);
+  pointer-events: none;
+  --sketch-ink: color-mix(in srgb, var(--text) 72%, transparent);
+}
+.style-sketchy :not(.color--plain) > .item-sketch {
+  --sketch-ink: var(--strong);
+}
+.style-sketchy .textitem:not(.has-outline) .item-sketch,
+.style-sketchy .image:not(.has-outline) .item-sketch {
+  display: none;
+}
+.style-sketchy .frame .item-sketch {
+  border-width: max(var(--ow, 1.5px), 1.5px);
+  opacity: 0.55;
+}
+.style-sketchy .note.is-selected,
+.style-sketchy .image.is-selected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.style-sketchy .note.is-editing {
+  box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft);
+}
+/* Lines get their wobble from the drawing itself (cheaper than a filter); shapes use the filter. */
+.style-sketchy .shape__outline {
+  filter: url(#mb-rough);
+}
+.style-sketchy .react-flow__edge-path.link {
+  stroke: color-mix(in srgb, var(--text) 55%, transparent);
+  stroke-width: 1.8;
+}
+.style-sketchy .link-head {
+  fill: color-mix(in srgb, var(--text) 55%, transparent);
+}
+.style-sample {
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 30px;
+}
+.style-sample--sketchy {
+  font-family: "Kalam", var(--font);
+  font-weight: 400;
+}
+
+/* ---------- Presentation ---------- */
+
+.is-presenting .title-bar,
+.is-presenting .dock,
+.is-presenting .dock-stack,
+.is-presenting .react-flow__node-toolbar,
+.is-presenting .link-bar,
+.is-presenting .react-flow__attribution,
+.is-presenting .minimap,
+.is-presenting .help-panel,
+.is-presenting .side-panel,
+.is-presenting .dot-handle,
+.is-presenting .fold-badge,
+.is-presenting .react-flow__background {
+  display: none !important;
+}
+.presentation {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  cursor: default;
+}
+.presentation.is-idle {
+  cursor: none;
+}
+.laser {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.laser line {
+  stroke: #ff3b5c;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(255, 40, 80, 0.7));
+}
+.presentation__bar {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 14px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  transition: opacity 0.3s ease;
+}
+.presentation.is-idle .presentation__bar {
+  opacity: 0;
+}
+.presentation__btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+.presentation__btn:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.presentation__btn:disabled {
+  opacity: 0.3;
+}
+.presentation__btn--next svg {
+  transform: scaleX(-1);
+}
+.presentation__title {
+  max-width: 300px;
+  padding: 0 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.presentation__count {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  padding-right: 4px;
+}
+.style-sketchy .outline-set:not(.has-outline) > .item-sketch {
+  display: none;
+}

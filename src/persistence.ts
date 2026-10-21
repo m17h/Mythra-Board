@@ -10,7 +10,9 @@ import {
   OUTLINE_WIDTHS,
   TEXT_STYLES,
   BACKGROUNDS,
+  BOARD_STYLES,
   COLORS,
+  FILLS,
   DEFAULT_NOTE_WIDTH,
   ITEM_TYPES,
   SHAPES,
@@ -50,6 +52,7 @@ type SavedItem = {
   arrowHead?: string;
   locked?: boolean;
   group?: string;
+  fill?: string;
 };
 type SavedLink = { id: string; from: string; to: string; label: string; curve: string; arrow: string; dash: string };
 type SavedBoard = {
@@ -61,6 +64,7 @@ type SavedBoard = {
   updatedAt: number;
   pinned: boolean;
   background: string;
+  style?: string;
   viewport: Viewport | null;
   items: SavedItem[];
   links: SavedLink[];
@@ -87,6 +91,7 @@ export function toSaved(doc: BoardDoc): SavedBoard {
     updatedAt: doc.updatedAt,
     pinned: doc.pinned,
     background: doc.background,
+    style: doc.style,
     viewport: doc.viewport,
     items: doc.nodes.map((raw) => {
       const n = cleanNode(raw);
@@ -119,6 +124,7 @@ export function toSaved(doc: BoardDoc): SavedBoard {
       if (n.data.arrowHead) item.arrowHead = n.data.arrowHead;
       if (n.data.locked) item.locked = true;
       if (n.data.group) item.group = n.data.group;
+      if (n.data.fill) item.fill = n.data.fill;
       return item;
     }),
     links: doc.edges.map(cleanEdge).map((e) => ({
@@ -182,6 +188,7 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (it.collapsed === true) node.data.collapsed = true;
     if (it.locked === true) node.data.locked = true;
     if (str(it.group)) node.data.group = str(it.group);
+    if (it.fill) node.data.fill = oneOf(it.fill, FILLS, "solid");
     if (type === "arrow") {
       node.data.ends = it.ends as [number, number, number, number];
       node.data.arrowHead = oneOf(it.arrowHead, ["none", "end", "both"] as const, "end");
@@ -224,6 +231,7 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     updatedAt,
     pinned: doc.pinned === true,
     background: oneOf(doc.background, BACKGROUNDS, "dots"),
+    style: oneOf(doc.style, BOARD_STYLES, "clean"),
     viewport,
     nodes,
     edges,
@@ -366,6 +374,7 @@ export function currentDoc(): BoardDoc {
     updatedAt,
     pinned: s.pinned,
     background: s.background,
+    style: s.style,
     viewport: s.viewport,
     nodes: s.nodes,
     edges: s.edges,
@@ -416,7 +425,8 @@ export function openInEditor(doc: BoardDoc) {
       s.edges === prev.edges &&
       s.title === prev.title &&
       s.viewport === prev.viewport &&
-      s.background === prev.background
+      s.background === prev.background &&
+      s.style === prev.style
     )
       return;
     if (timer) clearTimeout(timer);

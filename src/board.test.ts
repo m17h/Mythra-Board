@@ -275,6 +275,7 @@ const docOf = (s: ReturnType<typeof createBoardStore>): BoardDoc => ({
   updatedAt: 2,
   pinned: true,
   background: "grid",
+  style: "clean",
   viewport: { x: 1, y: 2, zoom: 0.5 },
   nodes: s.getState().nodes,
   edges: s.getState().edges,

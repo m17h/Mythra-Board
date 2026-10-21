@@ -1,6 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "@xyflow/react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { linkEnds, linkGeometry, type LinkGeometry } from "../linkPath";
+import { roughPath } from "../sketch";
 import { boardStore, defaultLinkData, useBoard } from "../store";
 import type { LinkEdge } from "../types";
 
@@ -13,15 +14,18 @@ export function useLinkGeometry(link: Pick<LinkEdge, "id" | "data">): LinkGeomet
 
 function LinkLine({ id, data, selected }: EdgeProps<LinkEdge>) {
   const editingLabel = useBoard((s) => s.editingLabelId === id);
+  const sketchy = useBoard((s) => s.style === "sketchy");
   const geo = useLinkGeometry({ id, data });
-  if (!geo) return null;
+  // Hand-drawn boards draw lines with a gentle double-stroke wobble.
+  const drawn = useMemo(() => (geo && sketchy ? roughPath(geo.path, id) : geo?.path), [geo, sketchy, id]);
+  if (!geo || !drawn) return null;
 
   const d = data ?? defaultLinkData();
   const className = `link${selected ? " is-selected" : ""}${d.dash === "dashed" ? " is-dashed" : ""}`;
 
   return (
     <>
-      <BaseEdge path={geo.path} className={className} interactionWidth={22} />
+      <BaseEdge path={drawn} className={className} interactionWidth={22} />
       {geo.heads.map((head, i) => (
         <path key={i} d={head} className={`link-head${selected ? " is-selected" : ""}`} />
       ))}

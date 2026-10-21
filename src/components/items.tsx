@@ -9,6 +9,7 @@ import { openBoard, useBoardIndex } from "../navigation";
 import { DEFAULT_NOTE_WIDTH, DEFAULT_OUTLINE, textStyleOf, type BoardNode, type ItemData, type ItemType, type Size } from "../types";
 import Thumbnail from "./Thumbnail";
 import { LABEL_INSETS, SHAPE_DETAILS, SHAPE_PATHS } from "../shapes";
+import { roughPath } from "../sketch";
 import { GlobeIcon, OpenIcon } from "./icons";
 import { BoxResizer, LinkHandles, TextEditor, WidthResizers } from "./itemParts";
 import RichText, { taskStats } from "./RichText";
@@ -42,6 +43,7 @@ function look(type: ItemType, data: ItemData): { className: string; style: CSSPr
       data.outlineStyle === "dashed" && "is-dashed-outline",
       data.align && `align--${data.align}`,
       data.locked && "is-locked",
+      data.fill && data.fill !== "solid" && `fill--${data.fill}`,
     ),
     style,
   };
@@ -71,6 +73,7 @@ export const NoteItem = memo(function NoteItem({ id, type, data, selected, dragg
       style={style}
       onDoubleClick={startEditing(id)}
     >
+      <span className="item-sketch" aria-hidden />
       {hasTitle &&
         (editing ? (
           <TextEditor id={id} field="title" text={data.title ?? ""} className="note__title" placeholder="Title" singleLine />
@@ -135,6 +138,7 @@ export const ShapeItem = memo(function ShapeItem({ id, data, selected, dragging 
       style={style}
       onDoubleClick={startEditing(id)}
     >
+      {!SHAPE_PATHS[shape] && <span className="item-sketch" aria-hidden />}
       {SHAPE_PATHS[shape] && (
         <svg className="shape__outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
           <path d={SHAPE_PATHS[shape]} vectorEffect="non-scaling-stroke" />
@@ -175,6 +179,7 @@ export const ImageItem = memo(function ImageItem({ id, data, selected, dragging 
   const { className, style } = look("image", data);
   return (
     <div className={cls("image", `color--${data.color}`, className, selected && "is-selected", dragging && "is-dragging")} style={style}>
+      <span className="item-sketch" aria-hidden />
       {src ? (
         <img src={src} alt="" draggable={false} />
       ) : (
@@ -204,6 +209,7 @@ export const FrameItem = memo(function FrameItem({ id, data, selected }: NodePro
         boardStore.getState().addNote({ x: p.x - DEFAULT_NOTE_WIDTH / 2, y: p.y - 22 }, { edit: true });
       }}
     >
+      <span className="item-sketch" aria-hidden />
       <div className="frame__title" onDoubleClick={startEditing(id)} title="Double-click to rename">
         {editing ? (
           <TextEditor id={id} text={data.text} className="frame__input" placeholder="Section name" singleLine />
@@ -237,6 +243,7 @@ export const LinkCardItem = memo(function LinkCardItem({ id, data, selected, dra
       style={style}
       onDoubleClick={startEditing(id)}
     >
+      <span className="item-sketch" aria-hidden />
       <div className="linkcard__icon">
         <GlobeIcon />
       </div>
@@ -285,6 +292,7 @@ export const BoardCardItem = memo(function BoardCardItem({ id, data, selected, d
         open();
       }}
     >
+      <span className="item-sketch" aria-hidden />
       <div className={`boardcard__preview bg--${target?.background ?? "dots"}`}>
         {target && <Thumbnail nodes={target.nodes} edges={target.edges} />}
       </div>
@@ -328,7 +336,9 @@ export const ArrowItem = memo(function ArrowItem({ id, data, selected, width, he
   const length = 8 + stroke * 2.2;
   const end = head !== "none" ? offset({ x: x2, y: y2 }, dir, -(length - 2)) : { x: x2, y: y2 };
   const start = head === "both" ? offset({ x: x1, y: y1 }, back, -(length - 2)) : { x: x1, y: y1 };
-  const line = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  const sketchy = useBoard((s) => s.style === "sketchy");
+  const straight = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+  const line = sketchy ? roughPath(straight, id) : straight;
 
   const dragEnd = (which: 0 | 1) => (e: React.PointerEvent) => {
     e.stopPropagation();

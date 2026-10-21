@@ -17,6 +17,7 @@ import {
   LINKABLE,
   type ArrangeMode,
   type BoardBackground,
+  type BoardStyle,
   type BoardNode,
   type Color,
   type ItemData,
@@ -43,6 +44,7 @@ export type BoardDoc = {
   updatedAt: number;
   pinned: boolean;
   background: BoardBackground;
+  style: BoardStyle;
   viewport: Viewport | null;
   nodes: BoardNode[];
   edges: LinkEdge[];
@@ -129,6 +131,7 @@ export type BoardState = {
   createdAt: number;
   pinned: boolean;
   background: BoardBackground;
+  style: BoardStyle;
   nodes: BoardNode[];
   edges: LinkEdge[];
   viewport: Viewport | null;
@@ -167,6 +170,7 @@ export type BoardState = {
   load: (doc: BoardDoc) => void;
   setTitle: (title: string) => void;
   setBackground: (background: BoardBackground) => void;
+  setStyle: (style: BoardStyle) => void;
   setTool: (tool: Tool) => void;
   setShapeKind: (shape: ShapeKind) => void;
   setPen: (opts: { color?: Color; size?: Size }) => void;
@@ -255,6 +259,7 @@ function cleanData(d: ItemData): ItemData {
   if (d.arrowHead) out.arrowHead = d.arrowHead;
   if (d.locked) out.locked = true;
   if (d.group) out.group = d.group;
+  if (d.fill && d.fill !== "solid") out.fill = d.fill;
   return out;
 }
 
@@ -384,6 +389,7 @@ export function createBoardStore() {
       createdAt: 0,
       pinned: false,
       background: "dots",
+      style: "clean",
       nodes: [],
       edges: [],
       viewport: null,
@@ -549,6 +555,7 @@ export function createBoardStore() {
           createdAt: doc.createdAt,
           pinned: doc.pinned,
           background: doc.background,
+          style: doc.style,
           viewport: doc.viewport,
           nodes: withFramesFirst(doc.nodes.map(decorate)),
           edges: doc.edges,
@@ -562,6 +569,7 @@ export function createBoardStore() {
       },
       setTitle: (title) => set({ title }),
       setBackground: (background) => set({ background }),
+      setStyle: (style) => set({ style }),
       setTool: (tool) => {
         get().stopEditing();
         set({ tool });

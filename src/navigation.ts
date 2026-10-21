@@ -40,6 +40,7 @@ export function makeBoardDoc(
     updatedAt: now,
     pinned: false,
     background: content?.background ?? "dots",
+    style: "clean",
     viewport: null,
     nodes: content?.nodes ?? [],
     edges: content?.edges ?? [],

@@ -7,6 +7,7 @@ import {
   ALIGNS,
   COLORS,
   DEFAULT_OUTLINE,
+  FILLABLE,
   LINKABLE,
   OUTLINABLE,
   OUTLINE_STYLES,
@@ -277,6 +278,7 @@ function ColorPanel({ items }: { items: Selected[] }) {
   const colored = items.filter((i) => i.type !== "image");
   const strong = colored.every((i) => STROKED.has(i.type));
   const inks = items.filter((i) => i.type === "ink" || i.type === "arrow");
+  const fillable = items.filter((i) => FILLABLE.has(i.type));
   const arrows = items.filter((i) => i.type === "arrow");
   const store = boardStore.getState();
   return (
@@ -288,6 +290,31 @@ function ColorPanel({ items }: { items: Selected[] }) {
           onPick={(c) => boardStore.getState().setColor(colored.map((i) => i.id), c)}
         />
       </Row>
+      {fillable.length > 0 && (
+        <Row label="Fill style">
+          <div className="segmented segmented--compact">
+            {(
+              [
+                ["solid", "Solid"],
+                ["light", "Light"],
+                ["hatch", "Hatched"],
+                ["none", "None"],
+              ] as const
+            ).map(([f, name]) => (
+              <button
+                key={f}
+                type="button"
+                title={name}
+                aria-label={`${name} fill`}
+                className={`segmented__item${only(fillable.map((i) => i.data.fill ?? "solid")) === f ? " is-active" : ""}`}
+                onClick={() => store.styleItems(fillable.map((i) => i.id), { fill: f }, FILLABLE)}
+              >
+                <span className={`fill-sample fill-sample--${f} color--${only(fillable.map((i) => i.data.color)) ?? "blue"}`} />
+              </button>
+            ))}
+          </div>
+        </Row>
+      )}
       {inks.length > 0 && (
         <Row label="Thickness">
           {SIZES.map((sz) => (

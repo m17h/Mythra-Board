@@ -26,6 +26,13 @@ export const ITEM_TYPES = ["note", "text", "shape", "image", "frame", "ink", "li
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 export const BACKGROUNDS = ["dots", "grid", "plain"] as const;
+
+/** How a board is drawn: crisp, or hand-drawn with wobbly lines and handwriting. */
+export const BOARD_STYLES = ["clean", "sketchy"] as const;
+export type BoardStyle = (typeof BOARD_STYLES)[number];
+
+export const FILLS = ["solid", "light", "hatch", "none"] as const;
+export type Fill = (typeof FILLS)[number];
 export type BoardBackground = (typeof BACKGROUNDS)[number];
 
 /**
@@ -63,6 +70,8 @@ export type ItemData = {
   locked?: boolean;
   /** Items sharing a group id are selected and moved together. */
   group?: string;
+  /** How the background colour is painted (cards, shapes and sections). */
+  fill?: Fill;
 };
 
 export type BoardNode = Node<ItemData, ItemType>;
@@ -116,3 +125,6 @@ export const textStyleOf = (d: ItemData): TextStyle =>
 
 export const ARRANGE_MODES = ["left", "hcenter", "right", "top", "vmiddle", "bottom", "distributeX", "distributeY"] as const;
 export type ArrangeMode = (typeof ARRANGE_MODES)[number];
+
+/** Types whose background can be solid, light, hatched or see-through. */
+export const FILLABLE: ReadonlySet<ItemType> = new Set(["note", "shape", "frame", "link", "board"]);

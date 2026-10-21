@@ -29,6 +29,7 @@ type Options = {
   exportPng: () => void;
   openPalette: () => void;
   openFind: () => void;
+  present: () => void;
 };
 
 /** Board-wide keyboard shortcuts and copy/paste. Ignored while you're typing. */
@@ -100,6 +101,7 @@ export function useShortcuts(options: Options) {
         else if (e.code === "KeyG") (s.group(selected.map((n) => n.id)), handled());
         else if (e.shiftKey && e.code === "KeyL") (s.setLocked(selected.map((n) => n.id), !selected.every((n) => n.data.locked)), handled());
         else if (e.shiftKey && e.code === "KeyE") (opts.current.exportPng(), handled());
+        else if (e.shiftKey && e.code === "KeyP") (opts.current.present(), handled());
         else if (e.shiftKey && e.code === "BracketRight") (s.reorder(selected.map((n) => n.id), "front"), handled());
         else if (e.shiftKey && e.code === "BracketLeft") (s.reorder(selected.map((n) => n.id), "back"), handled());
         else if (key === "=" || key === "+") (void rf.zoomIn({ duration: 150 }), handled());

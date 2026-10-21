@@ -15,7 +15,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import type { TrailStep } from "./App";
 import { useBoardCommands, type BoardActions } from "./boardCommands";
 import { CommandPalette, type Command } from "./components/CommandPalette";
+import BoardDefs from "./components/BoardDefs";
 import { ExportDialog } from "./components/ExportDialog";
+import { Presentation } from "./components/Presentation";
 import { FindBar } from "./components/FindBar";
 import { VersionHistory } from "./components/VersionHistory";
 import type { Point } from "./geometry";
@@ -39,6 +41,7 @@ import {
   FileIcon,
   FitIcon,
   HistoryIcon,
+  PresentIcon,
   HelpIcon,
   MapIcon,
   MinusIcon,
@@ -58,6 +61,7 @@ import { boardStore, pauseSnapping, setSnapZoom, useBoard } from "./store";
 import { BACKGROUNDS, DEFAULT_NOTE_WIDTH, type BoardBackground, type BoardNode, type Color, type LinkEdge } from "./types";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { useTheme } from "./theme";
+import { useDismiss } from "./useDismiss";
 import { useShortcuts } from "./useShortcuts";
 
 const IS_TAURI = isTauri();
@@ -124,6 +128,18 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
 
   const [exportOpen, setExportOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [presenting, setPresenting] = useState(false);
+  const boardStyle = useBoard((s) => s.style);
+  const present = useCallback(() => {
+    const s = boardStore.getState();
+    s.stopEditing();
+    s.clearSelection();
+    s.setTool("select");
+    setMenu(null);
+    setPalette(false);
+    setFindOpen(false);
+    setPresenting(true);
+  }, []);
   const exportPng = useCallback(() => {
     boardStore.getState().stopEditing();
     setExportOpen(true);
@@ -165,6 +181,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
     exportPng,
     openPalette: () => setPalette(true),
     openFind: () => setFindOpen(true),
+    present,
   });
 
   const actions = useMemo<BoardActions>(
@@ -179,11 +196,19 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       goBack: back ? onBack : undefined,
       openBoardById: (id) => void openBoard(id),
       extra: [
+        { id: "board:present", group: "Board", label: "Present sections", keys: "⇧⌘P", icon: <PresentIcon />, keywords: "slides slideshow", run: present },
+        {
+          id: "board:style",
+          group: "Board",
+          label: boardStore.getState().style === "sketchy" ? "Style: Clean" : "Style: Hand-drawn",
+          keywords: "sketchy rough excalidraw look",
+          run: () => boardStore.getState().setStyle(boardStore.getState().style === "sketchy" ? "clean" : "sketchy"),
+        },
         { id: "board:history", group: "Board", label: "Version history…", icon: <HistoryIcon />, keywords: "restore undo backup", run: () => setHistoryOpen(true) },
         { id: "board:file", group: "Board", label: "Save a board file…", icon: <FileIcon />, keywords: "backup share export mythra", run: () => setExportOpen(true) },
       ],
     }),
-    [viewCenter, pickImage, exportPng, onHome, back, onBack],
+    [viewCenter, pickImage, exportPng, onHome, back, onBack, present, boardStyle],
   );
   const commands = useBoardCommands(actions, palette);
 
@@ -250,7 +275,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
   return (
     <div
       ref={container}
-      className={`app board tool-${tool}${drawing ? " is-drawing" : ""}${connecting ? " is-connecting" : ""}${IS_TAURI ? " is-tauri" : ""}`}
+      className={`app board tool-${tool} style-${boardStyle}${drawing ? " is-drawing" : ""}${connecting ? " is-connecting" : ""}${IS_TAURI ? " is-tauri" : ""}${presenting ? " is-presenting" : ""}`}
       onPointerMove={(e) => {
         pointer.current = { x: e.clientX, y: e.clientY };
       }}
@@ -327,13 +352,14 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         minZoom={0.1}
         maxZoom={3}
         zoomOnDoubleClick={false}
-        panOnScroll
-        zoomOnPinch
-        panOnDrag={tool === "hand" ? true : [1]}
+        panOnScroll={!presenting}
+        zoomOnScroll={!presenting}
+        zoomOnPinch={!presenting}
+        panOnDrag={presenting ? false : tool === "hand" ? true : [1]}
         selectionOnDrag={tool === "select"}
         selectionMode={SelectionMode.Full}
-        nodesDraggable={tool !== "hand" && !drawing}
-        elementsSelectable={tool !== "hand" && !drawing}
+        nodesDraggable={tool !== "hand" && !drawing && !presenting}
+        elementsSelectable={tool !== "hand" && !drawing && !presenting}
         elevateNodesOnSelect={false}
         multiSelectionKeyCode={["Shift", "Meta"]}
         deleteKeyCode={null}
@@ -354,6 +380,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         <SelectionToolbar onMore={(x, y) => setMenu({ x, y, kind: "items" })} />
         <LinkToolbar />
         <CanvasGestures container={container} />
+        <BoardDefs />
         <Guides />
         {showMap && (
           <MiniMap<BoardNode>
@@ -376,6 +403,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         onBack={onBack}
         onExport={exportPng}
         onHistory={() => setHistoryOpen(true)}
+        onPresent={present}
       />
       {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
       {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
@@ -438,6 +466,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       </div>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {presenting && <Presentation onExit={() => setPresenting(false)} />}
       {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} onNotice={setNotice} />}
       {historyOpen && <VersionHistory onClose={() => setHistoryOpen(false)} onNotice={setNotice} />}
       {menu && (
@@ -540,6 +569,7 @@ function TitleBar({
   onBack,
   onExport,
   onHistory,
+  onPresent,
 }: {
   status: SaveStatus;
   onHome: () => void;
@@ -547,17 +577,23 @@ function TitleBar({
   onBack: () => void;
   onExport: () => void;
   onHistory: () => void;
+  onPresent: () => void;
 }) {
   const title = useBoard((s) => s.title);
   const boardId = useBoard((s) => s.boardId);
   const boards = useBoardIndex((s) => s.boards);
   const linkedFrom = useMemo(() => backlinksTo({ id: boardId, title }), [boards, boardId, title]);
   const [showLinks, setShowLinks] = useState(false);
+  const linksRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(linksRef, showLinks, useCallback(() => setShowLinks(false), []));
   const background = useBoard((s) => s.background);
   const snapping = useBoard((s) => s.snapping);
+  const boardStyle = useBoard((s) => s.style);
   const [draft, setDraft] = useState<string | null>(null);
   const [showSaved, setShowSaved] = useState(false);
   const [menu, setMenu] = useState(false);
+  useDismiss(menuRef, menu, useCallback(() => setMenu(false), []));
 
   useEffect(() => {
     if (status !== "saved") return;
@@ -606,7 +642,7 @@ function TitleBar({
         </span>
       )}
       {linkedFrom.length > 0 && (
-        <div className="menu-anchor">
+        <div className="menu-anchor" ref={linksRef}>
           <button
             type="button"
             className={`backlinks-btn${showLinks ? " is-active" : ""}`}
@@ -618,7 +654,6 @@ function TitleBar({
           </button>
           {showLinks && (
             <>
-              <div className="menu-scrim" onPointerDown={() => setShowLinks(false)} />
               <div className="menu" role="menu">
                 <div className="menu__label">Linked from</div>
                 {linkedFrom.map((b) => (
@@ -640,16 +675,30 @@ function TitleBar({
           )}
         </div>
       )}
-      <div className="menu-anchor">
+      <div className="menu-anchor" ref={menuRef}>
         <ToolButton label="Board options" active={menu} onClick={() => setMenu((v) => !v)}>
           <MoreIcon />
         </ToolButton>
         {menu && (
           <>
-            <div className="menu-scrim" onPointerDown={() => setMenu(false)} />
             <div className="menu" role="menu">
               <div className="menu__label">Appearance</div>
               <ThemeSwitch labels />
+              <div className="menu__sep" />
+              <div className="menu__label">Style</div>
+              <div className="segmented">
+                {(["clean", "sketchy"] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    className={`segmented__item${boardStyle === st ? " is-active" : ""}`}
+                    onClick={() => boardStore.getState().setStyle(st)}
+                  >
+                    <span className={`style-sample style-sample--${st}`}>Aa</span>
+                    {st === "clean" ? "Clean" : "Hand-drawn"}
+                  </button>
+                ))}
+              </div>
               <div className="menu__sep" />
               <div className="menu__label">Background</div>
               <div className="segmented">
@@ -692,6 +741,17 @@ function TitleBar({
               >
                 <span>Version history…</span>
               </button>
+              <button
+                type="button"
+                className="menu__item"
+                onClick={() => {
+                  setMenu(false);
+                  onPresent();
+                }}
+              >
+                <span>Present sections</span>
+                <kbd className="menu__keys">⇧⌘P</kbd>
+              </button>
             </div>
           </>
         )}
@@ -733,6 +793,10 @@ const SHORTCUTS: [string, string][] = [
   ["⇧1 / ⇧2 / ⇧0", "Fit all / Zoom to selection / 100%"],
   ["⌘K", "Command palette: every action and board"],
   ["⌘F", "Find on this board"],
+  ["⇧⌘P", "Present your sections as slides"],
+  ["⌘G / ⇧⌘G", "Group / Ungroup"],
+  ["⇧⌘L", "Lock or unlock"],
+  ["⌥A / ⌥D / ⌥W / ⌥S", "Align left / right / top / bottom"],
   ["A / L", "Arrow or line / Lasso select"],
   ["Drag with the arrow tool", "Between two items: link them"],
   ["[[Board name]] in a note", "Link to (or create) another board"],

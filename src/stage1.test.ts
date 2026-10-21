@@ -60,7 +60,7 @@ describe("mind maps", () => {
 
   it("store: fold, tidy and undo", () => {
     const s = createBoardStore();
-    s.getState().load({ id: "b", title: "t", createdAt: 0, updatedAt: 0, pinned: false, background: "dots", viewport: null, nodes, edges });
+    s.getState().load({ id: "b", title: "t", createdAt: 0, updatedAt: 0, pinned: false, background: "dots", style: "clean", viewport: null, nodes, edges });
     s.getState().selectAll();
     expect(s.getState().nodes.filter((n) => n.selected)).toHaveLength(6);
     s.getState().toggleCollapse("a");
@@ -85,7 +85,7 @@ describe("free arrows", () => {
     s.getState().addArrow({ x: 0, y: 0 }, { x: 100, y: 50 }, { arrowHead: "both", color: "blue", size: "l" });
     s.getState().addBoardCard("other", "Other board", { x: 0, y: 200 });
     s.getState().addItem("shape", { x: 0, y: 400 }, { data: { shape: "star" } });
-    const doc = { id: "x", title: "t", createdAt: 0, updatedAt: 0, pinned: false, background: "dots" as const, viewport: null, nodes: s.getState().nodes, edges: [] };
+    const doc = { id: "x", title: "t", createdAt: 0, updatedAt: 0, pinned: false, background: "dots" as const, style: "clean" as const, viewport: null, nodes: s.getState().nodes, edges: [] };
     const back = fromSaved(JSON.parse(JSON.stringify(toSaved(doc))));
     expect(back.nodes.map((n) => n.data)).toEqual(s.getState().nodes.map((n) => n.data));
     const bad = fromSaved({ items: [{ id: "a", type: "arrow", ends: [1, 2] }, { id: "b", type: "board" }, { id: "c", type: "shape", shape: "blob" }] });
