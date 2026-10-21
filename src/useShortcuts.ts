@@ -16,6 +16,8 @@ const TOOL_KEYS: Record<string, Tool> = {
   f: "frame",
   p: "pen",
   e: "eraser",
+  a: "arrow",
+  l: "lasso",
 };
 
 type Options = {
@@ -25,6 +27,8 @@ type Options = {
   pickImage: () => void;
   goHome: () => void;
   exportPng: () => void;
+  openPalette: () => void;
+  openFind: () => void;
 };
 
 /** Board-wide keyboard shortcuts and copy/paste. Ignored while you're typing. */
@@ -52,6 +56,18 @@ export function useShortcuts(options: Options) {
       if (mod && !e.shiftKey && e.key === "[") {
         e.preventDefault();
         opts.current.goHome();
+        return;
+      }
+      if (mod && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        boardStore.getState().stopEditing();
+        opts.current.openPalette();
+        return;
+      }
+      if (mod && !e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        boardStore.getState().stopEditing();
+        opts.current.openFind();
         return;
       }
       if (isTyping(e.target) || e.isComposing) return;
@@ -121,6 +137,7 @@ export function useShortcuts(options: Options) {
       if (e.shiftKey) return;
       if (TOOL_KEYS[lower]) s.setTool(TOOL_KEYS[lower]);
       else if (lower === "i") opts.current.pickImage();
+      else if (lower === "c" && selected.length === 1) s.toggleCollapse(selected[0].id);
       else if (lower === "m") opts.current.toggleMap();
     };
 

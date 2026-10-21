@@ -26,6 +26,7 @@ import {
   type TextStyle,
 } from "../types";
 import { useLinkGeometry } from "./LinkLine";
+import { ShapeGlyph, SHAPE_NAMES } from "../shapes";
 import {
   AlignCenterIcon,
   AlignLeftIcon,
@@ -33,20 +34,15 @@ import {
   ArrowBothIcon,
   CardTitleIcon,
   ChevronIcon,
+  MoreIcon,
   OutlineIcon,
   ArrowEndIcon,
   ArrowNoneIcon,
-  ChecklistIcon,
   CurveIcon,
   DashIcon,
-  DiamondIcon,
-  DuplicateIcon,
   ElbowIcon,
-  EllipseIcon,
   LabelIcon,
   LinkedNoteIcon,
-  RectIcon,
-  SectionIcon,
   StraightIcon,
   SwapIcon,
   TrashIcon,
@@ -62,12 +58,6 @@ export const COLOR_NAMES: Record<Color, string> = {
   green: "Green",
 };
 const SIZE_NAMES: Record<Size, string> = { s: "Small", m: "Medium", l: "Large" };
-export const SHAPE_NAMES: Record<ShapeKind, string> = { rect: "Box", ellipse: "Circle", diamond: "Diamond" };
-export const SHAPE_ICONS: Record<ShapeKind, ReactNode> = {
-  rect: <RectIcon />,
-  ellipse: <EllipseIcon />,
-  diamond: <DiamondIcon />,
-};
 const SIZED: ReadonlySet<ItemType> = new Set(["note", "shape", "ink", "link"]);
 
 export function ToolButton({
@@ -142,7 +132,20 @@ export function SizeButtons({ value, onPick }: { value: Size | null; onPick: (s:
 
 const only = <T,>(values: T[]): T | null => (values.length && values.every((v) => v === values[0]) ? values[0] : null);
 
-type Panel = "color" | "outline" | "text";
+type Panel = "color" | "outline" | "text" | "shape";
+
+/** A grid of every shape kind; picking one changes the selected shapes. */
+export function ShapePicker({ value, onPick }: { value: ShapeKind | null; onPick: (k: ShapeKind) => void }) {
+  return (
+    <div className="shape-grid" role="group" aria-label="Shape">
+      {SHAPES.map((k) => (
+        <ToolButton key={k} label={SHAPE_NAMES[k]} active={value === k} onClick={() => onPick(k)}>
+          <ShapeGlyph kind={k} />
+        </ToolButton>
+      ))}
+    </div>
+  );
+}
 
 const TEXT_STYLE_NAMES: Record<TextStyle, string> = {
   title: "Title",
@@ -154,6 +157,8 @@ const TEXT_STYLE_NAMES: Record<TextStyle, string> = {
 const OUTLINE_NAMES: Record<OutlineWidth, string> = { 0: "None", 1: "Thin", 2: "Medium", 4: "Thick" };
 const ALIGN_ICONS: Record<Align, ReactNode> = { left: <AlignLeftIcon />, center: <AlignCenterIcon />, right: <AlignRightIcon /> };
 const TEXTUAL: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "link"]);
+/** Items whose colour is a line or text colour rather than a fill. */
+const STROKED: ReadonlySet<ItemType> = new Set(["ink", "text", "arrow"]);
 
 type Selected = { id: string; type: ItemType; data: ItemData };
 
@@ -227,8 +232,10 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function ColorPanel({ items }: { items: Selected[] }) {
   const colored = items.filter((i) => i.type !== "image");
-  const strong = colored.every((i) => i.type === "ink" || i.type === "text");
-  const inks = items.filter((i) => i.type === "ink");
+  const strong = colored.every((i) => STROKED.has(i.type));
+  const inks = items.filter((i) => i.type === "ink" || i.type === "arrow");
+  const arrows = items.filter((i) => i.type === "arrow");
+  const store = boardStore.getState();
   return (
     <>
       <Row label={strong ? "Colour" : "Fill"}>
@@ -245,12 +252,47 @@ function ColorPanel({ items }: { items: Selected[] }) {
               key={sz}
               label={{ s: "Thin", m: "Medium", l: "Thick" }[sz]}
               active={only(inks.map((i) => i.data.size)) === sz}
-              onClick={() => boardStore.getState().setSize(inks.map((i) => i.id), sz)}
+              onClick={() => store.setSize(inks.map((i) => i.id), sz)}
             >
               <span className={`pen-dot pen-dot--${sz}`} />
             </ToolButton>
           ))}
         </Row>
+      )}
+      {arrows.length > 0 && (
+        <>
+          <Row label="Ends">
+            {(
+              [
+                ["none", "No arrowheads", <ArrowNoneIcon key="n" />],
+                ["end", "Arrowhead", <ArrowEndIcon key="e" />],
+                ["both", "Arrowheads both ends", <ArrowBothIcon key="b" />],
+              ] as const
+            ).map(([h, name, icon]) => (
+              <ToolButton
+                key={h}
+                label={name}
+                active={only(arrows.map((i) => i.data.arrowHead ?? "end")) === h}
+                onClick={() => store.styleItems(arrows.map((i) => i.id), { arrowHead: h })}
+              >
+                {icon}
+              </ToolButton>
+            ))}
+          </Row>
+          <Row label="Line">
+            <ToolButton
+              label="Dashed"
+              active={only(arrows.map((i) => i.data.outlineStyle ?? "solid")) === "dashed"}
+              onClick={() =>
+                store.styleItems(arrows.map((i) => i.id), {
+                  outlineStyle: only(arrows.map((i) => i.data.outlineStyle)) === "dashed" ? "solid" : "dashed",
+                })
+              }
+            >
+              <DashIcon />
+            </ToolButton>
+          </Row>
+        </>
       )}
     </>
   );
@@ -375,7 +417,7 @@ function TextPanel({ items }: { items: Selected[] }) {
 }
 
 /** Colour, outline, text and arrange controls above the selected items. */
-export function SelectionToolbar() {
+export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) => void }) {
   const selectedIds = useBoard(useShallow((s) => s.nodes.filter((n) => n.selected).map((n) => `${n.id}:${n.type}`)));
   const selectedData = useBoard(useShallow((s) => s.nodes.filter((n) => n.selected).map((n) => n.data)));
   const hidden = useBoard(
@@ -426,7 +468,7 @@ export function SelectionToolbar() {
   const store = boardStore.getState();
   const toggle = (p: Panel) => setOpen((o) => (o === p ? null : p));
   const fill = only(colored.map((i) => i.data.color));
-  const strongFill = colored.every((i) => i.type === "ink" || i.type === "text");
+  const strongFill = colored.every((i) => STROKED.has(i.type));
 
   return (
     <NodeToolbar nodeId={ids} isVisible={!hidden} position={Position.Top} offset={items.some((i) => i.type === "frame") ? 48 : 14}>
@@ -447,47 +489,46 @@ export function SelectionToolbar() {
           </PanelButton>
         )}
         <span className="bar-divider" />
-        {shapes &&
-          SHAPES.map((k) => (
-            <ToolButton key={k} label={SHAPE_NAMES[k]} active={only(items.map((i) => i.data.shape)) === k} onClick={() => store.setShape(ids, k)}>
-              {SHAPE_ICONS[k]}
-            </ToolButton>
-          ))}
-        {shapes && <span className="bar-divider" />}
-        {single?.type === "note" && (
+        {shapes && (
           <>
-            <ToolButton
-              label={single.data.title === undefined ? "Add a card title" : "Remove the card title"}
-              active={single.data.title !== undefined}
-              onClick={() => store.toggleTitle(single.id)}
+            <PanelButton
+              label="Shape"
+              open={open === "shape"}
+              onToggle={() => toggle("shape")}
+              panel={<ShapePicker value={only(items.map((i) => i.data.shape ?? "rect"))} onPick={(k) => store.setShape(ids, k)} />}
             >
-              <CardTitleIcon />
-            </ToolButton>
-            <ToolButton
-              label="Add a to-do"
-              onClick={() => {
-                const text = single.data.text;
-                store.startEditing(single.id);
-                store.setText(single.id, `${text}${text && !text.endsWith("\n") ? "\n" : ""}- [ ] `);
-              }}
-            >
-              <ChecklistIcon />
-            </ToolButton>
+              <ShapeGlyph kind={only(items.map((i) => i.data.shape ?? "rect")) ?? "rect"} />
+            </PanelButton>
+            <span className="bar-divider" />
           </>
+        )}
+        {single?.type === "note" && (
+          <ToolButton
+            label={single.data.title === undefined ? "Add a card title" : "Remove the card title"}
+            active={single.data.title !== undefined}
+            onClick={() => store.toggleTitle(single.id)}
+          >
+            <CardTitleIcon />
+          </ToolButton>
         )}
         {single && LINKABLE.has(single.type) && (
           <ToolButton label="Add linked note (Tab)" onClick={() => store.addLinkedNote(single.id, Position.Right)}>
             <LinkedNoteIcon />
           </ToolButton>
         )}
-        {!(single?.type === "frame") && (
-          <ToolButton label="Put in a section (⌥⌘G)" onClick={() => store.frameSelection()}>
-            <SectionIcon />
-          </ToolButton>
-        )}
-        <ToolButton label="Duplicate (⌘D)" onClick={() => store.duplicateSelection()}>
-          <DuplicateIcon />
-        </ToolButton>
+        <button
+          type="button"
+          className="tool-btn"
+          title="More actions"
+          aria-label="More actions"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            onMore(r.left, r.bottom + 8);
+          }}
+        >
+          <MoreIcon />
+        </button>
         <ToolButton label="Delete (⌫)" danger onClick={() => store.deleteNodes(ids)}>
           <TrashIcon />
         </ToolButton>

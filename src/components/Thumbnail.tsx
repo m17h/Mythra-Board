@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { center, rectsBounds } from "../geometry";
 import { rectOf } from "../layout";
+import { SHAPE_PATHS } from "../shapes";
 import type { BoardNode, LinkEdge } from "../types";
 
 const PAD = 40;
@@ -43,19 +44,24 @@ function Thumbnail({ nodes, edges }: { nodes: BoardNode[]; edges: LinkEdge[] }) 
             for (let i = 0; i + 2 < pts.length; i += 3) d += `${i ? "L" : "M"}${r.x + pts[i]} ${r.y + pts[i + 1]}`;
             return <path key={n.id} d={d} className={`thumb__ink ${c}`} />;
           }
+          case "arrow": {
+            const [x1, y1, x2, y2] = n.data.ends ?? [0, 0, 0, 0];
+            return <line key={n.id} x1={r.x + x1} y1={r.y + y1} x2={r.x + x2} y2={r.y + y2} className={`thumb__ink ${c}`} />;
+          }
           case "shape":
-            if (n.data.shape === "ellipse")
-              return <ellipse key={n.id} cx={r.x + r.width / 2} cy={r.y + r.height / 2} rx={r.width / 2} ry={r.height / 2} className={`thumb__shape ${c}`} />;
-            if (n.data.shape === "diamond") {
-              const { x: cx, y: cy } = center(r);
+            if (n.data.shape && SHAPE_PATHS[n.data.shape])
               return (
-                <polygon
+                <path
                   key={n.id}
-                  points={`${cx},${r.y} ${r.x + r.width},${cy} ${cx},${r.y + r.height} ${r.x},${cy}`}
+                  d={SHAPE_PATHS[n.data.shape]}
+                  transform={`translate(${r.x} ${r.y}) scale(${r.width / 100} ${r.height / 100})`}
+                  vectorEffect="non-scaling-stroke"
+                  style={{ strokeWidth: 1.2 }}
                   className={`thumb__shape ${c}`}
                 />
               );
-            }
+            if (n.data.shape === "ellipse")
+              return <ellipse key={n.id} cx={r.x + r.width / 2} cy={r.y + r.height / 2} rx={r.width / 2} ry={r.height / 2} className={`thumb__shape ${c}`} />;
             return <rect key={n.id} {...r} rx={12} className={`thumb__shape ${c}`} />;
           default:
             return <rect key={n.id} {...r} rx={12} className={`thumb__note ${c}`} />;

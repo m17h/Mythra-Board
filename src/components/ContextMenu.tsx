@@ -1,5 +1,7 @@
 import { Position, useReactFlow } from "@xyflow/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import type { Point } from "../geometry";
+import { childrenOf } from "../mindmap";
 import { boardStore } from "../store";
 import { DEFAULT_NOTE_WIDTH, EDITABLE, LINKABLE } from "../types";
 
@@ -8,7 +10,17 @@ export type MenuTarget = { x: number; y: number; kind: "items" | "link" | "pane"
 type Entry = { label: string; keys?: string; danger?: boolean; run: () => void } | "divider";
 
 /** The right-click menu for items, links and the empty board. */
-export function ContextMenu({ target, onClose, onExport }: { target: MenuTarget; onClose: () => void; onExport: () => void }) {
+export function ContextMenu({
+  target,
+  onClose,
+  onExport,
+  onPickBoard,
+}: {
+  target: MenuTarget;
+  onClose: () => void;
+  onExport: () => void;
+  onPickBoard: (at: Point) => void;
+}) {
   const rf = useReactFlow();
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: target.x, top: target.y });
@@ -40,6 +52,7 @@ export function ContextMenu({ target, onClose, onExport }: { target: MenuTarget;
   const single = selected.length === 1 ? selected[0] : null;
   const ids = selected.map((n) => n.id);
   const at = rf.screenToFlowPosition({ x: target.x, y: target.y });
+  const hasKids = single ? (childrenOf(s.nodes, s.edges).get(single.id)?.length ?? 0) > 0 : false;
 
   let entries: Entry[];
   if (target.kind === "items") {
@@ -47,6 +60,24 @@ export function ContextMenu({ target, onClose, onExport }: { target: MenuTarget;
       ...(single && EDITABLE.has(single.type) ? [{ label: "Edit text", keys: "↩", run: () => s.startEditing(single.id) }] : []),
       ...(single && LINKABLE.has(single.type)
         ? [{ label: "Add linked note", keys: "⇥", run: () => s.addLinkedNote(single.id, Position.Right) }]
+        : []),
+      ...(single?.type === "note"
+        ? [
+            {
+              label: "Add a to-do",
+              run: () => {
+                const text = single.data.text;
+                s.startEditing(single.id);
+                s.setText(single.id, `${text}${text && !text.endsWith("\n") ? "\n" : ""}- [ ] `);
+              },
+            },
+          ]
+        : []),
+      ...(single && (hasKids || single.data.collapsed)
+        ? [
+            { label: single.data.collapsed ? "Unfold branch" : "Fold branch", keys: "C", run: () => s.toggleCollapse(single.id) },
+            ...(hasKids ? [{ label: "Tidy up branch", run: () => void s.tidyUp([single.id]) }] : []),
+          ]
         : []),
       { label: "Duplicate", keys: "⌘D", run: () => s.duplicateSelection() },
       { label: "Copy", keys: "⌘C", run: () => document.execCommand("copy") },
@@ -72,9 +103,11 @@ export function ContextMenu({ target, onClose, onExport }: { target: MenuTarget;
     entries = [
       { label: "Add note here", keys: "N", run: () => void s.addNote({ x: at.x - DEFAULT_NOTE_WIDTH / 2, y: at.y - 22 }, { edit: true }) },
       { label: "Add text here", keys: "T", run: () => void s.addItem("text", { x: at.x - 8, y: at.y - 20 }, { edit: true }) },
+      { label: "Link a board here…", run: () => onPickBoard(at) },
       "divider",
       { label: "Select all", keys: "⌘A", run: () => s.selectAll() },
       { label: "Fit everything", keys: "⇧1", run: () => void rf.fitView({ padding: 0.25, maxZoom: 1, duration: 250 }) },
+      { label: "Tidy up mind maps", run: () => void s.tidyUp() },
       { label: s.snapping ? "Turn off snapping" : "Turn on snapping", run: () => s.setSnapping(!s.snapping) },
       "divider",
       { label: "Export as PNG…", keys: "⇧⌘E", run: onExport },

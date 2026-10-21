@@ -280,3 +280,101 @@ export const AutoThemeIcon = () => (
     <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
   </Icon>
 );
+export const ArrowToolIcon = () => (
+  <Icon>
+    <path d="M5 19 19 5M10 5h9v9" />
+  </Icon>
+);
+export const LineToolIcon = () => (
+  <Icon>
+    <path d="M5 19 19 5" />
+  </Icon>
+);
+export const LassoIcon = () => (
+  <Icon>
+    <path d="M7.5 15.5C4.5 14.3 3 12.6 3 10.5 3 6.9 7 4 12 4s9 2.9 9 6.5S17 17 12 17c-1.1 0-2.2-.1-3.2-.4" />
+    <path d="M8.5 15.5c0 1.5-.8 2.6-2 3.3M6.5 18.8c-.7.4-1 .9-.8 1.7" />
+  </Icon>
+);
+export const BoardLinkIcon = () => (
+  <Icon>
+    <rect x="3" y="5" width="12" height="10" rx="2" />
+    <path d="M9 19h10a2 2 0 0 0 2-2V9M13 11l8-8M16 3h5v5" />
+  </Icon>
+);
+export const FoldIcon = () => (
+  <Icon>
+    <circle cx="6" cy="12" r="2.5" />
+    <path d="M8.5 12h4M12.5 7v10M12.5 7h3M12.5 17h3" />
+    <path d="M18 5.5v3M16.5 7h3" />
+  </Icon>
+);
+export const TidyIcon = () => (
+  <Icon>
+    <rect x="3" y="10" width="5" height="4" rx="1" />
+    <rect x="16" y="4" width="5" height="4" rx="1" />
+    <rect x="16" y="10" width="5" height="4" rx="1" />
+    <rect x="16" y="16" width="5" height="4" rx="1" />
+    <path d="M8 12h4M12 6v12M12 6h4M12 12h4M12 18h4" />
+  </Icon>
+);
+export const LockIcon = ({ open }: { open?: boolean }) => (
+  <Icon>
+    <rect x="5" y="11" width="14" height="9" rx="2" />
+    <path d={open ? "M8 11V7.5a4 4 0 0 1 7.5-2" : "M8 11V7.5a4 4 0 0 1 8 0V11"} />
+  </Icon>
+);
+export const GroupIcon = () => (
+  <Icon>
+    <rect x="3.5" y="3.5" width="17" height="17" rx="3" strokeDasharray="3 2.5" />
+    <rect x="7" y="7" width="5" height="5" rx="1" />
+    <rect x="12" y="12" width="5" height="5" rx="1" />
+  </Icon>
+);
+export const AlignItemsIcon = () => (
+  <Icon>
+    <path d="M4 3v18" />
+    <rect x="7" y="6" width="12" height="4" rx="1" />
+    <rect x="7" y="14" width="7" height="4" rx="1" />
+  </Icon>
+);
+export const PresentIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="18" height="12" rx="2" />
+    <path d="M12 16v4M8 20h8M10 8l4 2-4 2z" />
+  </Icon>
+);
+export const HistoryIcon = () => (
+  <Icon>
+    <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+    <path d="M3.5 4v4h4M12 7.5V12l3 2" />
+  </Icon>
+);
+export const FileIcon = () => (
+  <Icon>
+    <path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-10z" />
+    <path d="M14 3.5v5h5" />
+  </Icon>
+);
+export const CommandIcon = () => (
+  <Icon>
+    <path d="M9 9V6.5A2.5 2.5 0 1 0 6.5 9H9zm0 0v6m0-6h6m-6 6v2.5A2.5 2.5 0 1 1 6.5 15H9zm0 0h6m0 0v2.5a2.5 2.5 0 1 0 2.5-2.5H15zm0 0V9m0 0V6.5A2.5 2.5 0 1 1 17.5 9H15z" />
+  </Icon>
+);
+export const SparkleIcon = () => (
+  <Icon>
+    <path d="M12 3.5 13.8 9 19.5 10.8 13.8 12.6 12 18.5 10.2 12.6 4.5 10.8 10.2 9z" />
+    <path d="M19 3v3M17.5 4.5h3M5 17v3M3.5 18.5h3" />
+  </Icon>
+);
+export const BackIcon = () => (
+  <Icon>
+    <path d="M15 5 8 12l7 7" />
+  </Icon>
+);
+export const SettingsIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" />
+  </Icon>
+);

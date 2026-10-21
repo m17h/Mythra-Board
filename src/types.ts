@@ -6,7 +6,7 @@ export type Color = (typeof COLORS)[number];
 export const SIZES = ["s", "m", "l"] as const;
 export type Size = (typeof SIZES)[number];
 
-export const SHAPES = ["rect", "ellipse", "diamond"] as const;
+export const SHAPES = ["rect", "ellipse", "diamond", "triangle", "hexagon", "star", "cylinder", "arrow"] as const;
 export type ShapeKind = (typeof SHAPES)[number];
 
 export const TEXT_STYLES = ["title", "heading", "subheading", "body", "caption"] as const;
@@ -22,7 +22,7 @@ export type OutlineWidth = (typeof OUTLINE_WIDTHS)[number];
 export const OUTLINE_STYLES = ["solid", "dashed"] as const;
 export type OutlineStyle = (typeof OUTLINE_STYLES)[number];
 
-export const ITEM_TYPES = ["note", "text", "shape", "image", "frame", "ink", "link"] as const;
+export const ITEM_TYPES = ["note", "text", "shape", "image", "frame", "ink", "link", "board", "arrow"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
 export const BACKGROUNDS = ["dots", "grid", "plain"] as const;
@@ -51,6 +51,14 @@ export type ItemData = {
   outline?: OutlineWidth;
   outlineColor?: Color;
   outlineStyle?: OutlineStyle;
+  /** For board cards: the board they open. */
+  boardId?: string;
+  /** Hide everything this item links out to (a folded mind-map branch). */
+  collapsed?: boolean;
+  /** For free arrows and lines: [x1, y1, x2, y2] relative to the item's corner. */
+  ends?: [number, number, number, number];
+  /** For free arrows: which ends get arrowheads. */
+  arrowHead?: LinkArrow;
 };
 
 export type BoardNode = Node<ItemData, ItemType>;
@@ -75,14 +83,14 @@ export const MIN_NOTE_WIDTH = 120;
 export const MAX_NOTE_WIDTH = 720;
 
 /** Types whose height follows their text instead of being set by resizing. */
-export const AUTO_HEIGHT: ReadonlySet<ItemType> = new Set(["note", "text", "link"]);
+export const AUTO_HEIGHT: ReadonlySet<ItemType> = new Set(["note", "text", "link", "board"]);
 /** Types that links can attach to. */
-export const LINKABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "image", "link"]);
+export const LINKABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "image", "link", "board"]);
 /** Types you can type into. */
 export const EDITABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "frame", "link"]);
 
 /** Types that can have an outline. */
-export const OUTLINABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "image", "frame", "link"]);
+export const OUTLINABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "image", "frame", "link", "board"]);
 /** Types whose text can be aligned. */
 export const ALIGNABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape"]);
 /** Outline each type has before the user picks one. */
@@ -94,6 +102,8 @@ export const DEFAULT_OUTLINE: Record<ItemType, OutlineWidth> = {
   frame: 1,
   ink: 0,
   link: 0,
+  board: 0,
+  arrow: 0,
 };
 
 /** Text items made before text styles existed used the S/M/L size instead. */

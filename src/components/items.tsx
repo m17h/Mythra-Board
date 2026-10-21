@@ -4,7 +4,11 @@ import { hostOf } from "../images";
 import { strokePath } from "../ink";
 import { assetUrl, openExternal } from "../persistence";
 import { boardStore, useBoard } from "../store";
-import { DEFAULT_NOTE_WIDTH, DEFAULT_OUTLINE, textStyleOf, type BoardNode, type ItemData, type ItemType } from "../types";
+import { arrowHead, offset, unit } from "../geometry";
+import { openBoard, useBoardIndex } from "../navigation";
+import { DEFAULT_NOTE_WIDTH, DEFAULT_OUTLINE, textStyleOf, type BoardNode, type ItemData, type ItemType, type Size } from "../types";
+import Thumbnail from "./Thumbnail";
+import { LABEL_INSETS, SHAPE_DETAILS, SHAPE_PATHS } from "../shapes";
 import { GlobeIcon, OpenIcon } from "./icons";
 import { BoxResizer, LinkHandles, TextEditor, WidthResizers } from "./itemParts";
 import RichText, { taskStats } from "./RichText";
@@ -105,7 +109,7 @@ export const NoteItem = memo(function NoteItem({ id, type, data, selected, dragg
           </span>
         </div>
       )}
-      <LinkHandles id={id} />
+      <LinkHandles id={id} collapsed={data.collapsed} />
       {selected && !editing && <WidthResizers />}
     </div>
   );
@@ -130,12 +134,13 @@ export const ShapeItem = memo(function ShapeItem({ id, data, selected, dragging 
       style={style}
       onDoubleClick={startEditing(id)}
     >
-      {shape === "diamond" && (
+      {SHAPE_PATHS[shape] && (
         <svg className="shape__outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-          <polygon points="50,0 100,50 50,100 0,50" vectorEffect="non-scaling-stroke" />
+          <path d={SHAPE_PATHS[shape]} vectorEffect="non-scaling-stroke" />
+          {SHAPE_DETAILS[shape] && <path className="shape__detail" d={SHAPE_DETAILS[shape]} vectorEffect="non-scaling-stroke" />}
         </svg>
       )}
-      <div className="shape__label">
+      <div className="shape__label" style={LABEL_INSETS[shape]}>
         {editing ? (
           <TextEditor id={id} text={data.text} className="item-text" placeholder="Label" canBranch />
         ) : (
@@ -146,7 +151,7 @@ export const ShapeItem = memo(function ShapeItem({ id, data, selected, dragging 
           )
         )}
       </div>
-      <LinkHandles id={id} />
+      <LinkHandles id={id} collapsed={data.collapsed} />
       <BoxResizer visible={!!selected && !editing} />
     </div>
   );
@@ -174,7 +179,7 @@ export const ImageItem = memo(function ImageItem({ id, data, selected, dragging 
       ) : (
         <div className={cls("image__placeholder", failed && "is-failed")}>{failed ? "Image missing" : ""}</div>
       )}
-      <LinkHandles id={id} />
+      <LinkHandles id={id} collapsed={data.collapsed} />
       <BoxResizer visible={!!selected} keepAspectRatio minWidth={40} minHeight={40} />
     </div>
   );
@@ -257,9 +262,112 @@ export const LinkCardItem = memo(function LinkCardItem({ id, data, selected, dra
       >
         <OpenIcon />
       </button>
-      <LinkHandles id={id} />
+      <LinkHandles id={id} collapsed={data.collapsed} />
       {selected && !editing && <WidthResizers />}
     </div>
+  );
+});
+
+/** A card that opens another board, with a small preview of what's on it. */
+export const BoardCardItem = memo(function BoardCardItem({ id, data, selected, dragging }: NodeProps<BoardNode>) {
+  const target = useBoardIndex((s) => s.boards.find((b) => b.id === data.boardId));
+  const loaded = useBoardIndex((s) => s.loaded);
+  const { className, style } = look("board", data);
+  const open = () => data.boardId && void openBoard(data.boardId);
+  const missing = loaded && !target;
+  return (
+    <div
+      className={cls("note", "boardcard", `color--${data.color}`, className, missing && "is-missing", selected && "is-selected", dragging && "is-dragging")}
+      style={style}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        open();
+      }}
+    >
+      <div className={`boardcard__preview bg--${target?.background ?? "dots"}`}>
+        {target && <Thumbnail nodes={target.nodes} edges={target.edges} />}
+      </div>
+      <div className="boardcard__meta">
+        <div className="boardcard__title">{target?.title ?? data.text ?? "Board"}</div>
+        <div className="boardcard__sub">
+          {missing ? "This board was deleted" : target ? `${target.nodes.length} item${target.nodes.length === 1 ? "" : "s"}` : "Board"}
+        </div>
+      </div>
+      {!missing && (
+        <button
+          type="button"
+          className="linkcard__open nodrag"
+          title="Open this board"
+          aria-label="Open this board"
+          onDoubleClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            open();
+          }}
+        >
+          <OpenIcon />
+        </button>
+      )}
+      <LinkHandles id={id} collapsed={data.collapsed} />
+      {selected && <WidthResizers />}
+    </div>
+  );
+});
+
+const ARROW_WIDTH: Record<Size, number> = { s: 1.5, m: 2.5, l: 4 };
+
+/** A free-standing arrow or line. When selected, drag either end to move it. */
+export const ArrowItem = memo(function ArrowItem({ id, data, selected, width, height, positionAbsoluteX, positionAbsoluteY }: NodeProps<BoardNode>) {
+  const rf = useReactFlow();
+  const [x1, y1, x2, y2] = data.ends ?? [0, 0, 0, 0];
+  const stroke = ARROW_WIDTH[data.size];
+  const head = data.arrowHead ?? "end";
+  const dir = unit({ x: x1, y: y1 }, { x: x2, y: y2 });
+  const back = { x: -dir.x, y: -dir.y };
+  const length = 8 + stroke * 2.2;
+  const end = head !== "none" ? offset({ x: x2, y: y2 }, dir, -(length - 2)) : { x: x2, y: y2 };
+  const start = head === "both" ? offset({ x: x1, y: y1 }, back, -(length - 2)) : { x: x1, y: y1 };
+  const line = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+
+  const dragEnd = (which: 0 | 1) => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const el = e.currentTarget as Element;
+    el.setPointerCapture(e.pointerId);
+    const store = boardStore.getState();
+    store.begin();
+    const fixed = which === 0 ? { x: positionAbsoluteX + x2, y: positionAbsoluteY + y2 } : { x: positionAbsoluteX + x1, y: positionAbsoluteY + y1 };
+    const move = (ev: PointerEvent) => {
+      const p = rf.screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
+      if (which === 0) store.setArrowEnds(id, p, fixed);
+      else store.setArrowEnds(id, fixed, p);
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move as EventListener);
+      el.removeEventListener("pointerup", up);
+      store.commit();
+    };
+    el.addEventListener("pointermove", move as EventListener);
+    el.addEventListener("pointerup", up);
+  };
+
+  return (
+    <svg
+      className={cls("free-arrow", `color--${data.color}`, data.outlineStyle === "dashed" && "is-dashed", selected && "is-selected")}
+      width={width}
+      height={height}
+    >
+      <path className="free-arrow__hit" d={`M ${x1} ${y1} L ${x2} ${y2}`} />
+      <path className="free-arrow__line" d={line} style={{ strokeWidth: stroke }} />
+      {head !== "none" && <path className="free-arrow__head" d={arrowHead({ x: x2, y: y2 }, dir, length, length * 0.85)} />}
+      {head === "both" && <path className="free-arrow__head" d={arrowHead({ x: x1, y: y1 }, back, length, length * 0.85)} />}
+      {selected && (
+        <>
+          <circle className="free-arrow__handle nodrag" cx={x1} cy={y1} r={6} onPointerDown={dragEnd(0)} />
+          <circle className="free-arrow__handle nodrag" cx={x2} cy={y2} r={6} onPointerDown={dragEnd(1)} />
+        </>
+      )}
+    </svg>
   );
 });
 
@@ -271,4 +379,6 @@ export const nodeTypes = {
   frame: FrameItem,
   ink: InkItem,
   link: LinkCardItem,
+  board: BoardCardItem,
+  arrow: ArrowItem,
 };

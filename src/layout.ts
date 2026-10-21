@@ -14,13 +14,32 @@ export function defaultSize(type: ItemType, shape?: ShapeKind): { width: number;
     case "text":
       return { width: 260, height: 40 };
     case "shape":
-      return shape === "diamond" ? { width: 170, height: 120 } : shape === "ellipse" ? { width: 170, height: 110 } : { width: 180, height: 100 };
+      switch (shape) {
+        case "diamond":
+          return { width: 170, height: 120 };
+        case "ellipse":
+          return { width: 170, height: 110 };
+        case "triangle":
+        case "star":
+        case "hexagon":
+          return { width: 160, height: 140 };
+        case "cylinder":
+          return { width: 140, height: 160 };
+        case "arrow":
+          return { width: 200, height: 100 };
+        default:
+          return { width: 180, height: 100 };
+      }
     case "frame":
       return { width: 520, height: 360 };
     case "link":
       return { width: 280, height: 74 };
     case "image":
       return { width: 320, height: 240 };
+    case "board":
+      return { width: 260, height: 96 };
+    case "arrow":
+      return { width: 100, height: 40 };
     default:
       return { width: DEFAULT_NOTE_WIDTH, height: NEW_NOTE_HEIGHT };
   }

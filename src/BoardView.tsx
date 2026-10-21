@@ -11,11 +11,38 @@ import {
   type FinalConnectionState,
   type IsValidConnection,
 } from "@xyflow/react";
-import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import type { TrailStep } from "./App";
+import { useBoardCommands, type BoardActions } from "./boardCommands";
+import { CommandPalette, type Command } from "./components/CommandPalette";
+import { FindBar } from "./components/FindBar";
+import type { Point } from "./geometry";
+import { hiddenItems } from "./mindmap";
+import {
+  backlinksTo,
+  createBoard,
+  findBoardByTitle,
+  makeBoardDoc,
+  openBoard,
+  refreshBoardIndex,
+  useBoardIndex,
+} from "./navigation";
 import { CanvasGestures } from "./components/CanvasGestures";
 import { ContextMenu, type MenuTarget } from "./components/ContextMenu";
 import { Dock } from "./components/Dock";
-import { BoardsIcon, FitIcon, HelpIcon, MapIcon, MinusIcon, MoreIcon, PlusIcon, RedoIcon, UndoIcon } from "./components/icons";
+import {
+  BackIcon,
+  BoardLinkIcon,
+  BoardsIcon,
+  FitIcon,
+  HelpIcon,
+  MapIcon,
+  MinusIcon,
+  MoreIcon,
+  PlusIcon,
+  RedoIcon,
+  UndoIcon,
+} from "./components/icons";
 import { nodeTypes } from "./components/items";
 import { edgeTypes } from "./components/LinkLine";
 import LinkPreview from "./components/LinkPreview";
@@ -44,9 +71,23 @@ const MINIMAP_COLORS: Record<Color, string> = {
 
 const BACKGROUND_NAMES: Record<BoardBackground, string> = { dots: "Dots", grid: "Grid", plain: "Plain" };
 
-export default function BoardView({ status, onHome }: { status: SaveStatus; onHome: () => void }) {
+type Props = { status: SaveStatus; onHome: () => void; back: TrailStep | null; onBack: () => void };
+
+export default function BoardView({ status, onHome, back, onBack }: Props) {
   const nodes = useBoard((s) => s.nodes);
   const edges = useBoard((s) => s.edges);
+  const [palette, setPalette] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  // Where a board card will go when a board is picked from the "Link to a board" list.
+  const [pickerAt, setPickerAt] = useState<Point | null>(null);
+
+  // Folded branches: hide everything under them (React Flow skips hidden items entirely).
+  const hidden = useMemo(() => hiddenItems(nodes, edges), [nodes, edges]);
+  const shownNodes = useMemo(() => (hidden.size ? nodes.map((n) => (hidden.has(n.id) ? { ...n, hidden: true } : n)) : nodes), [nodes, hidden]);
+  const shownEdges = useMemo(
+    () => (hidden.size ? edges.map((e) => (hidden.has(e.source) || hidden.has(e.target) ? { ...e, hidden: true } : e)) : edges),
+    [edges, hidden],
+  );
   const tool = useBoard((s) => s.tool);
   const background = useBoard((s) => s.background);
   const connecting = useBoard((s) => s.connecting);
@@ -70,6 +111,12 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
   const zoom = useFlowStore((s) => s.transform[2]);
 
   const pickImage = useCallback(() => fileInput.current?.click(), []);
+  const viewCenter = useCallback(() => rf.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }), [rf]);
+  const backOrHome = back ? onBack : onHome;
+
+  useEffect(() => {
+    void refreshBoardIndex();
+  }, []);
 
   const exportPng = useCallback(async () => {
     const s = boardStore.getState();
@@ -125,9 +172,27 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
     toggleHelp: () => setShowHelp((v) => !v),
     toggleMap: () => setShowMap((v) => !v),
     pickImage,
-    goHome: onHome,
+    goHome: backOrHome,
     exportPng: () => void exportPng(),
+    openPalette: () => setPalette(true),
+    openFind: () => setFindOpen(true),
   });
+
+  const actions = useMemo<BoardActions>(
+    () => ({
+      openFind: () => setFindOpen(true),
+      pickBoard: () => setPickerAt(viewCenter()),
+      pickImage,
+      toggleMap: () => setShowMap((v) => !v),
+      toggleHelp: () => setShowHelp((v) => !v),
+      exportPng: () => void exportPng(),
+      goHome: onHome,
+      goBack: back ? onBack : undefined,
+      openBoardById: (id) => void openBoard(id),
+    }),
+    [viewCenter, pickImage, exportPng, onHome, back, onBack],
+  );
+  const commands = useBoardCommands(actions, palette);
 
   // Keep an item you've just started typing into on screen.
   useEffect(() => {
@@ -187,7 +252,7 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
     void addImages(files, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }));
   };
 
-  const drawing = tool === "pen" || tool === "eraser" || tool === "shape" || tool === "frame";
+  const drawing = tool === "pen" || tool === "eraser" || tool === "shape" || tool === "frame" || tool === "arrow" || tool === "lasso";
 
   return (
     <div
@@ -202,8 +267,8 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
       onDrop={onDrop}
     >
       <ReactFlow<BoardNode, LinkEdge>
-        nodes={nodes}
-        edges={edges}
+        nodes={shownNodes}
+        edges={shownEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={store.onNodesChange}
@@ -293,7 +358,7 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
             className="board-bg"
           />
         )}
-        <SelectionToolbar />
+        <SelectionToolbar onMore={(x, y) => setMenu({ x, y, kind: "items" })} />
         <LinkToolbar />
         <CanvasGestures container={container} />
         <Guides />
@@ -311,7 +376,10 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
         )}
       </ReactFlow>
 
-      <TitleBar status={status} onHome={onHome} onExport={() => void exportPng()} />
+      <TitleBar status={status} onHome={onHome} back={back} onBack={onBack} onExport={() => void exportPng()} />
+      {findOpen && <FindBar onClose={() => setFindOpen(false)} />}
+      {palette && <CommandPalette commands={commands} onClose={() => setPalette(false)} />}
+      {pickerAt && <BoardPicker at={pickerAt} onClose={() => setPickerAt(null)} />}
 
       {nodes.length === 0 && (
         <div className="empty-hint">
@@ -370,7 +438,14 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
       </div>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
-      {menu && <ContextMenu target={menu} onClose={() => setMenu(null)} onExport={() => void exportPng()} />}
+      {menu && (
+        <ContextMenu
+          target={menu}
+          onClose={() => setMenu(null)}
+          onExport={() => void exportPng()}
+          onPickBoard={(at) => setPickerAt(at)}
+        />
+      )}
       {notice && (
         <div className="toast" role="status">
           {notice}
@@ -378,6 +453,44 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
       )}
     </div>
   );
+}
+
+/** "Link to a board": pick an existing board (or name a new one) and drop a card for it. */
+function BoardPicker({ at, onClose }: { at: Point; onClose: () => void }) {
+  const currentId = useBoard((s) => s.boardId);
+  const boards = useBoardIndex((s) => s.boards);
+  const commands = useMemo<Command[]>(
+    () =>
+      boards
+        .filter((b) => b.id !== currentId)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map((b) => ({
+          id: b.id,
+          label: b.title,
+          group: "Your boards",
+          detail: `${b.nodes.length} item${b.nodes.length === 1 ? "" : "s"}`,
+          icon: <BoardsIcon />,
+          run: () => void boardStore.getState().addBoardCard(b.id, b.title, at),
+        })),
+    [boards, currentId, at],
+  );
+  const create = useCallback(
+    (query: string): Command[] =>
+      query && !findBoardByTitle(query)
+        ? [
+            {
+              id: "create",
+              label: `Create a board called “${query}”`,
+              group: "New",
+              icon: <PlusIcon />,
+              run: () =>
+                void createBoard(makeBoardDoc(query)).then((doc) => boardStore.getState().addBoardCard(doc.id, doc.title, at)),
+            },
+          ]
+        : [],
+    [at],
+  );
+  return <CommandPalette commands={commands} dynamic={create} placeholder="Link to which board? Type to search or name a new one" onClose={onClose} />;
 }
 
 /** Alignment lines shown while dragging. Kept one screen pixel thick at any zoom. */
@@ -418,8 +531,24 @@ function HistoryButtons() {
   );
 }
 
-function TitleBar({ status, onHome, onExport }: { status: SaveStatus; onHome: () => void; onExport: () => void }) {
+function TitleBar({
+  status,
+  onHome,
+  back,
+  onBack,
+  onExport,
+}: {
+  status: SaveStatus;
+  onHome: () => void;
+  back: TrailStep | null;
+  onBack: () => void;
+  onExport: () => void;
+}) {
   const title = useBoard((s) => s.title);
+  const boardId = useBoard((s) => s.boardId);
+  const boards = useBoardIndex((s) => s.boards);
+  const linkedFrom = useMemo(() => backlinksTo({ id: boardId, title }), [boards, boardId, title]);
+  const [showLinks, setShowLinks] = useState(false);
   const background = useBoard((s) => s.background);
   const snapping = useBoard((s) => s.snapping);
   const [draft, setDraft] = useState<string | null>(null);
@@ -440,9 +569,15 @@ function TitleBar({ status, onHome, onExport }: { status: SaveStatus; onHome: ()
 
   return (
     <div className="title-bar" data-tauri-drag-region={IS_TAURI || undefined}>
-      <ToolButton label="All boards (⌘[)" onClick={onHome}>
+      <ToolButton label={back ? "All boards" : "All boards (⌘[)"} onClick={onHome}>
         <BoardsIcon />
       </ToolButton>
+      {back && (
+        <button type="button" className="back-btn" title={`Back to “${back.title}” (⌘[)`} onClick={onBack}>
+          <BackIcon />
+          <span>{back.title}</span>
+        </button>
+      )}
       <span className="bar-divider" />
       <input
         className="title-input"
@@ -465,6 +600,41 @@ function TitleBar({ status, onHome, onExport }: { status: SaveStatus; onHome: ()
         <span className={`save-status${status === "saving" || showSaved ? " is-visible" : ""}`}>
           {status === "saving" ? "Saving…" : "Saved"}
         </span>
+      )}
+      {linkedFrom.length > 0 && (
+        <div className="menu-anchor">
+          <button
+            type="button"
+            className={`backlinks-btn${showLinks ? " is-active" : ""}`}
+            title="Boards that link here"
+            onClick={() => setShowLinks((v) => !v)}
+          >
+            <BoardLinkIcon />
+            {linkedFrom.length}
+          </button>
+          {showLinks && (
+            <>
+              <div className="menu-scrim" onPointerDown={() => setShowLinks(false)} />
+              <div className="menu" role="menu">
+                <div className="menu__label">Linked from</div>
+                {linkedFrom.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    role="menuitem"
+                    className="menu__item"
+                    onClick={() => {
+                      setShowLinks(false);
+                      void openBoard(b.id);
+                    }}
+                  >
+                    <BoardsIcon /> <span>{b.title}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
       <div className="menu-anchor">
         <ToolButton label="Board options" active={menu} onClick={() => setMenu((v) => !v)}>
@@ -547,7 +717,13 @@ const SHORTCUTS: [string, string][] = [
   ["Pinch or ⌘ scroll", "Zoom"],
   ["Space + drag", "Pan"],
   ["⇧1 / ⇧2 / ⇧0", "Fit all / Zoom to selection / 100%"],
-  ["⌘[", "Back to all boards"],
+  ["⌘K", "Command palette: every action and board"],
+  ["⌘F", "Find on this board"],
+  ["A / L", "Arrow or line / Lasso select"],
+  ["Drag with the arrow tool", "Between two items: link them"],
+  ["[[Board name]] in a note", "Link to (or create) another board"],
+  ["C", "Fold or unfold a branch"],
+  ["⌘[", "Back to the previous board, or all boards"],
 ];
 
 function HelpPanel({ onClose }: { onClose: () => void }) {

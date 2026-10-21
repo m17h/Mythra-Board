@@ -1,12 +1,33 @@
 import { memo, type ReactNode } from "react";
+import { findBoardByTitle, openBoardByTitle, useBoardIndex } from "../navigation";
 import { openExternal } from "../persistence";
+
+/** A [[Board name]] link: opens that board, or creates it if it doesn't exist yet. */
+function BoardLinkChip({ name }: { name: string }) {
+  const exists = useBoardIndex((s) => s.loaded && !!findBoardByTitle(name));
+  return (
+    <button
+      type="button"
+      className={`rt-board nodrag${exists ? "" : " is-new"}`}
+      title={exists ? `Open “${name}”` : `Create and open a board called “${name}”`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        void openBoardByTitle(name);
+      }}
+    >
+      {name}
+    </button>
+  );
+}
 
 const TASK = /^\s*[-*] \[( |x|X)\] ?(.*)$/;
 const BULLET = /^\s*[-*•] (.*)$/;
 const NUMBERED = /^\s*(\d+)[.)] (.*)$/;
 const HEADING = /^(#{1,3}) (.*)$/;
 const QUOTE = /^> ?(.*)$/;
-const INLINE = /(\*\*[^*\n]+\*\*|~~[^~\n]+~~|`[^`\n]+`|(?<![\w*])\*[^*\s][^*\n]*\*(?!\w)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+const INLINE = /(\[\[[^\]\n]+\]\]|\*\*[^*\n]+\*\*|~~[^~\n]+~~|`[^`\n]+`|(?<![\w*])\*[^*\s][^*\n]*\*(?!\w)|https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
 
 export function taskStats(text: string): { done: number; total: number } {
   let done = 0;
@@ -27,7 +48,8 @@ function inline(text: string): ReactNode[] {
     const t = m[0];
     const i = m.index!;
     if (i > last) out.push(text.slice(last, i));
-    if (t.startsWith("**")) out.push(<strong key={i}>{t.slice(2, -2)}</strong>);
+    if (t.startsWith("[[")) out.push(<BoardLinkChip key={i} name={t.slice(2, -2)} />);
+    else if (t.startsWith("**")) out.push(<strong key={i}>{t.slice(2, -2)}</strong>);
     else if (t.startsWith("~~")) out.push(<s key={i}>{t.slice(2, -2)}</s>);
     else if (t.startsWith("`")) out.push(<code key={i}>{t.slice(1, -1)}</code>);
     else if (t.startsWith("*")) out.push(<em key={i}>{t.slice(1, -1)}</em>);

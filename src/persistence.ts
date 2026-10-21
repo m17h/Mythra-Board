@@ -44,6 +44,10 @@ type SavedItem = {
   outline?: number;
   outlineColor?: string;
   outlineStyle?: string;
+  boardId?: string;
+  collapsed?: boolean;
+  ends?: number[];
+  arrowHead?: string;
 };
 type SavedLink = { id: string; from: string; to: string; label: string; curve: string; arrow: string; dash: string };
 type SavedBoard = {
@@ -107,6 +111,10 @@ export function toSaved(doc: BoardDoc): SavedBoard {
       if (n.data.outline !== undefined) item.outline = n.data.outline;
       if (n.data.outlineColor) item.outlineColor = n.data.outlineColor;
       if (n.data.outlineStyle) item.outlineStyle = n.data.outlineStyle;
+      if (n.data.boardId) item.boardId = n.data.boardId;
+      if (n.data.collapsed) item.collapsed = true;
+      if (n.data.ends) item.ends = n.data.ends;
+      if (n.data.arrowHead) item.arrowHead = n.data.arrowHead;
       return item;
     }),
     links: doc.edges.map(cleanEdge).map((e) => ({
@@ -144,6 +152,8 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (!id || seen.has(id)) continue;
     if (type === "image" && !str(it.asset)) continue;
     if (type === "ink" && !(Array.isArray(it.points) && it.points.every((p) => typeof p === "number"))) continue;
+    if (type === "arrow" && !(Array.isArray(it.ends) && it.ends.length === 4 && it.ends.every((p) => Number.isFinite(p)))) continue;
+    if (type === "board" && !str(it.boardId)) continue;
     seen.add(id);
     const node: BoardNode = {
       id,
@@ -164,6 +174,12 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (it.outline !== undefined) node.data.outline = oneOf(it.outline, OUTLINE_WIDTHS, DEFAULT_OUTLINE[type]);
     if (it.outlineColor) node.data.outlineColor = oneOf(it.outlineColor, COLORS, "plain");
     if (it.outlineStyle) node.data.outlineStyle = oneOf(it.outlineStyle, OUTLINE_STYLES, "solid");
+    if (type === "board") node.data.boardId = str(it.boardId);
+    if (it.collapsed === true) node.data.collapsed = true;
+    if (type === "arrow") {
+      node.data.ends = it.ends as [number, number, number, number];
+      node.data.arrowHead = oneOf(it.arrowHead, ["none", "end", "both"] as const, "end");
+    }
     nodes.push(node);
   }
   const edges: LinkEdge[] = [];

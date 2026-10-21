@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import { createStore, useStore } from "zustand";
 import { center, containsPoint, rectsBounds, type Point } from "./geometry";
 import { decorate, defaultSize, freeSpot, itemsInFrame, rectOf } from "./layout";
+import { hiddenItems, tidyTree, treeRoots } from "./mindmap";
 import { snapMove, type Guide } from "./snap";
 import {
   AUTO_HEIGHT,
@@ -19,6 +20,7 @@ import {
   type Color,
   type ItemData,
   type ItemType,
+  type LinkArrow,
   type LinkData,
   type LinkEdge,
   type LinkStyle,
@@ -26,7 +28,7 @@ import {
   type Size,
 } from "./types";
 
-export type Tool = "select" | "hand" | "note" | "text" | "shape" | "frame" | "pen" | "eraser";
+export type Tool = "select" | "hand" | "note" | "text" | "shape" | "frame" | "arrow" | "pen" | "eraser" | "lasso";
 
 export type EditField = "title" | "body";
 
@@ -71,6 +73,20 @@ const readSnapping = () => {
   }
 };
 const PASTE_OFFSET = 32;
+/** Room around a free arrow so its ends and arrowheads aren't clipped. */
+const ARROW_PAD = 16;
+
+/** The item box for a free arrow from `a` to `b`, with its ends relative to that box. */
+export function arrowBox(a: Point, b: Point) {
+  const x = Math.min(a.x, b.x) - ARROW_PAD;
+  const y = Math.min(a.y, b.y) - ARROW_PAD;
+  return {
+    position: { x, y },
+    width: Math.abs(a.x - b.x) + ARROW_PAD * 2,
+    height: Math.abs(a.y - b.y) + ARROW_PAD * 2,
+    ends: [a.x - x, a.y - y, b.x - x, b.y - y] as [number, number, number, number],
+  };
+}
 const FRAME_PADDING = 36;
 
 export type BoardState = {
@@ -87,6 +103,9 @@ export type BoardState = {
   shapeKind: ShapeKind;
   penColor: Color;
   penSize: Size;
+  /** Arrowheads for new free arrows: "none" draws plain lines. */
+  arrowHead: LinkArrow;
+  setArrowHead: (head: LinkArrow) => void;
   editingId: string | null;
   /** Which part of the item is being typed into. */
   editingField: EditField;
@@ -139,6 +158,16 @@ export type BoardState = {
   toggleTitle: (id: string) => void;
   setItemTitle: (id: string, title: string) => void;
   toggleTask: (id: string, line: number) => void;
+  /** Fold or unfold everything an item links out to. */
+  toggleCollapse: (id: string) => void;
+  /** Arrange mind-map branches neatly, from the given items (or every tree on the board). */
+  tidyUp: (rootIds?: string[]) => number;
+  /** A free-standing arrow or line between two board points. */
+  addArrow: (from: Point, to: Point, opts?: { arrowHead?: LinkArrow; color?: Color; size?: Size }) => string;
+  /** Move a free arrow's ends (board coordinates). Wrap in begin/commit. */
+  setArrowEnds: (id: string, from: Point, to: Point) => void;
+  /** A card that opens another board. */
+  addBoardCard: (boardId: string, title: string, at: Point) => string;
   frameSelection: () => string | null;
   startEditing: (id: string, field?: EditField) => void;
   stopEditing: () => void;
@@ -178,6 +207,10 @@ function cleanData(d: ItemData): ItemData {
   if (d.outline !== undefined) out.outline = d.outline;
   if (d.outlineColor) out.outlineColor = d.outlineColor;
   if (d.outlineStyle && d.outlineStyle !== "solid") out.outlineStyle = d.outlineStyle;
+  if (d.boardId) out.boardId = d.boardId;
+  if (d.collapsed) out.collapsed = true;
+  if (d.ends) out.ends = d.ends.map(round) as ItemData["ends"];
+  if (d.arrowHead) out.arrowHead = d.arrowHead;
   return out;
 }
 
@@ -314,6 +347,7 @@ export function createBoardStore() {
       shapeKind: "rect",
       penColor: "plain",
       penSize: "m",
+      arrowHead: "end",
       editingId: null,
       editingField: "body",
       editingLabelId: null,
@@ -479,6 +513,7 @@ export function createBoardStore() {
       setShapeKind: (shapeKind) => set({ shapeKind, tool: "shape" }),
       setPen: ({ color, size }) =>
         set((s) => ({ penColor: color ?? s.penColor, penSize: size ?? s.penSize, tool: "pen" })),
+      setArrowHead: (arrowHead) => set({ arrowHead, tool: "arrow" }),
       setViewport: (viewport) => set({ viewport }),
       setConnecting: (connecting) => set({ connecting }),
 
@@ -595,6 +630,57 @@ export function createBoardStore() {
           return { text: lines.join("\n") };
         }),
 
+      toggleCollapse: (id) => {
+        get().stopEditing();
+        updateData([id], (n) => ({ collapsed: !n.data.collapsed }));
+        // Hidden items shouldn't stay selected.
+        const hidden = hiddenItems(get().nodes, get().edges);
+        if (hidden.size) set((s) => ({ nodes: s.nodes.map((n) => (n.selected && hidden.has(n.id) ? { ...n, selected: false } : n)) }));
+      },
+
+      tidyUp: (rootIds) => {
+        const { nodes, edges } = get();
+        const roots = rootIds?.length ? rootIds : treeRoots(nodes, edges);
+        const moves = new Map<string, Point>();
+        for (const r of roots) for (const [id, p] of tidyTree(r, nodes, edges)) if (!moves.has(id)) moves.set(id, p);
+        if (!moves.size) return 0;
+        get().stopEditing();
+        record(() =>
+          set((s) => ({
+            nodes: s.nodes.map((n) => {
+              const p = moves.get(n.id);
+              return p ? { ...n, position: { x: round(p.x), y: round(p.y) } } : n;
+            }),
+          })),
+        );
+        return moves.size;
+      },
+
+      addArrow: (from, to, opts) => {
+        const box = arrowBox(from, to);
+        return get().addItem("arrow", box.position, {
+          width: box.width,
+          height: box.height,
+          data: { ends: box.ends, arrowHead: opts?.arrowHead ?? "end", color: opts?.color ?? "plain", size: opts?.size ?? "m" },
+        });
+      },
+
+      setArrowEnds: (id, from, to) => {
+        const box = arrowBox(from, to);
+        set((s) => ({
+          nodes: s.nodes.map((n) =>
+            n.id === id
+              ? { ...n, position: box.position, width: box.width, height: box.height, data: { ...n.data, ends: box.ends } }
+              : n,
+          ),
+        }));
+      },
+
+      addBoardCard: (boardId, title, at) => {
+        const size = defaultSize("board");
+        return get().addItem("board", { x: at.x - size.width / 2, y: at.y - size.height / 2 }, { data: { boardId, text: title } });
+      },
+
       frameSelection: () => {
         const selected = get().nodes.filter((n) => n.selected);
         const bounds = rectsBounds(selected.map(rectOf));
@@ -686,7 +772,10 @@ export function createBoardStore() {
           edges: s.edges.map((x) => (!!x.selected === e.has(x.id) ? x : { ...x, selected: e.has(x.id) })),
         }));
       },
-      selectAll: () => get().selectOnly(get().nodes.map((n) => n.id)),
+      selectAll: () => {
+        const hidden = hiddenItems(get().nodes, get().edges);
+        get().selectOnly(get().nodes.filter((n) => !hidden.has(n.id)).map((n) => n.id));
+      },
       clearSelection: () => get().selectOnly([]),
 
       deleteSelection: () => {

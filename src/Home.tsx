@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DuplicateIcon, MoreIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import Thumbnail from "./components/Thumbnail";
-import { isTauri, listBoards, newBoardId, restoreBoard, trashBoard, writeBoard } from "./persistence";
+import { createBoard, makeBoardDoc, refreshBoardIndex, updateIndexedBoard } from "./navigation";
+import { isTauri, newBoardId, restoreBoard, trashBoard, writeBoard } from "./persistence";
 import type { BoardDoc } from "./store";
 import { TEMPLATES, type Template } from "./templates";
 
@@ -43,7 +44,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   const search = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    listBoards().then(setBoards, (err) => {
+    refreshBoardIndex().then(setBoards, (err) => {
       console.error(err);
       setError(true);
       setBoards([]);
@@ -57,21 +58,10 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
   }, [toast]);
 
   const create = async (t: Template) => {
-    const now = Date.now();
     const { nodes, edges } = t.build();
-    const doc: BoardDoc = {
-      id: newBoardId(),
-      title: t.id === "blank" ? "Untitled board" : t.name,
-      createdAt: now,
-      updatedAt: now,
-      pinned: false,
-      background: t.background,
-      viewport: null,
-      nodes,
-      edges,
-    };
+    const doc = makeBoardDoc(t.id === "blank" ? "Untitled board" : t.name, { nodes, edges, background: t.background });
     try {
-      await writeBoard(doc);
+      await createBoard(doc);
       onOpen(doc);
     } catch (err) {
       console.error(err);
@@ -101,6 +91,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
     replace(next);
     try {
       await writeBoard(next);
+      updateIndexedBoard(next);
     } catch (err) {
       console.error(err);
       replace(doc);
@@ -113,6 +104,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
     const copy: BoardDoc = { ...doc, id: newBoardId(), title: `${doc.title} copy`, createdAt: now, updatedAt: now, pinned: false };
     try {
       await writeBoard(copy);
+      updateIndexedBoard(copy);
       setBoards((bs) => bs && [copy, ...bs]);
     } catch (err) {
       console.error(err);

@@ -1,8 +1,22 @@
 import type { ReactNode } from "react";
 import { boardStore, useBoard, type Tool } from "../store";
-import { SHAPES, SIZES } from "../types";
-import { CursorIcon, EraserIcon, FrameIcon, HandIcon, ImageIcon, NoteIcon, PenIcon, TextIcon } from "./icons";
-import { SHAPE_ICONS, SHAPE_NAMES, Swatches, ToolButton } from "./Toolbars";
+import { SIZES, type LinkArrow } from "../types";
+import {
+  ArrowBothIcon,
+  ArrowToolIcon,
+  CursorIcon,
+  EraserIcon,
+  FrameIcon,
+  HandIcon,
+  ImageIcon,
+  LassoIcon,
+  LineToolIcon,
+  NoteIcon,
+  PenIcon,
+  TextIcon,
+} from "./icons";
+import { ShapeGlyph } from "../shapes";
+import { ShapePicker, Swatches, ToolButton } from "./Toolbars";
 
 function ToolSwitch({ tool, label, children }: { tool: Tool; label: string; children: ReactNode }) {
   const active = useBoard((s) => s.tool === tool);
@@ -21,17 +35,39 @@ function ToolOptions() {
   const shapeKind = useBoard((s) => s.shapeKind);
   const penColor = useBoard((s) => s.penColor);
   const penSize = useBoard((s) => s.penSize);
+  const arrowHead = useBoard((s) => s.arrowHead);
   const store = boardStore.getState();
 
   if (tool === "shape") {
     return (
       <div className="dock dock--options" role="toolbar" aria-label="Shape">
-        {SHAPES.map((k) => (
-          <ToolButton key={k} label={SHAPE_NAMES[k]} active={shapeKind === k} onClick={() => store.setShapeKind(k)}>
-            {SHAPE_ICONS[k]}
+        <ShapePicker value={shapeKind} onPick={(k) => store.setShapeKind(k)} />
+        <span className="dock-hint">Click to place, or drag to size</span>
+      </div>
+    );
+  }
+  if (tool === "arrow") {
+    const heads: [LinkArrow, string, ReactNode][] = [
+      ["end", "Arrow", <ArrowToolIcon key="a" />],
+      ["none", "Line", <LineToolIcon key="l" />],
+      ["both", "Two-way arrow", <ArrowBothIcon key="b" />],
+    ];
+    return (
+      <div className="dock dock--options" role="toolbar" aria-label="Arrow">
+        {heads.map(([h, name, icon]) => (
+          <ToolButton key={h} label={name} active={arrowHead === h} onClick={() => store.setArrowHead(h)}>
+            {icon}
           </ToolButton>
         ))}
-        <span className="dock-hint">Click to place, or drag to size</span>
+        <span className="bar-divider" />
+        <Swatches value={penColor} strong onPick={(color) => store.setPen({ color })} />
+        <span className="bar-divider" />
+        {SIZES.map((s) => (
+          <ToolButton key={s} label={PEN_SIZE_NAMES[s]} active={penSize === s} onClick={() => store.setPen({ size: s })}>
+            <span className={`pen-dot pen-dot--${s}`} />
+          </ToolButton>
+        ))}
+        <span className="dock-hint">Drag between two items to link them</span>
       </div>
     );
   }
@@ -53,6 +89,7 @@ function ToolOptions() {
     text: "Click anywhere to add text",
     frame: "Click to place a section, or drag to size it",
     eraser: "Drag over pen strokes to erase them",
+    lasso: "Draw a loop around the items you want to select",
   };
   const hint = hints[tool];
   return hint ? (
@@ -71,6 +108,9 @@ export function Dock({ onPickImage }: { onPickImage: () => void }) {
         <ToolSwitch tool="select" label="Select (V)">
           <CursorIcon />
         </ToolSwitch>
+        <ToolSwitch tool="lasso" label="Lasso select (L)">
+          <LassoIcon />
+        </ToolSwitch>
         <ToolSwitch tool="hand" label="Pan (H, or hold Space)">
           <HandIcon />
         </ToolSwitch>
@@ -82,10 +122,13 @@ export function Dock({ onPickImage }: { onPickImage: () => void }) {
           <TextIcon />
         </ToolSwitch>
         <ToolSwitch tool="shape" label="Shape (S)">
-          {SHAPE_ICONS[shapeKind]}
+          <ShapeGlyph kind={shapeKind} />
         </ToolSwitch>
         <ToolSwitch tool="frame" label="Section (F)">
           <FrameIcon />
+        </ToolSwitch>
+        <ToolSwitch tool="arrow" label="Arrow or line (A)">
+          <ArrowToolIcon />
         </ToolSwitch>
         <span className="bar-divider" />
         <ToolSwitch tool="pen" label="Pen (P)">

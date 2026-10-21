@@ -1,5 +1,6 @@
 import { Handle, NodeResizeControl, NodeResizer, Position, ResizeControlVariant } from "@xyflow/react";
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { childrenOf, descendants } from "../mindmap";
 import { boardStore, useBoard, type EditField } from "../store";
 import { MAX_NOTE_WIDTH, MIN_NOTE_WIDTH } from "../types";
 
@@ -9,9 +10,10 @@ const beginResize = () => boardStore.getState().begin();
 const endResize = () => boardStore.getState().commit();
 
 /** The four link dots, plus an invisible target covering the item so links can be dropped anywhere on it. */
-export function LinkHandles({ id }: { id: string }) {
+export function LinkHandles({ id, collapsed }: { id: string; collapsed?: boolean }) {
   return (
     <>
+      {collapsed && <FoldBadge id={id} />}
       <Handle type="target" position={Position.Top} id="body" className="body-handle" isConnectableStart={false} />
       {SIDES.map((side) => (
         <Handle
@@ -28,6 +30,26 @@ export function LinkHandles({ id }: { id: string }) {
         />
       ))}
     </>
+  );
+}
+
+/** Shown on a folded item: how many items are tucked away, and a click to unfold them. */
+function FoldBadge({ id }: { id: string }) {
+  const count = useBoard((s) => descendants(id, childrenOf(s.nodes, s.edges)).size);
+  return (
+    <button
+      type="button"
+      className="fold-badge nodrag"
+      title="Show the hidden branch (C)"
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        boardStore.getState().toggleCollapse(id);
+      }}
+    >
+      +{count}
+    </button>
   );
 }
 
