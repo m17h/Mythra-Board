@@ -65,7 +65,7 @@ export const TEMPLATES: Template[] = [
     background: "dots",
     build: () => {
       const b = board();
-      b.add("text", { x: 0, y: -110 }, { text: "What are we trying to solve?", size: "l" }, { width: 640 });
+      b.add("text", { x: 0, y: -110 }, { text: "What are we trying to solve?", textStyle: "heading" }, { width: 640 });
       b.add("frame", { x: 0, y: 0 }, { text: "Ideas", color: "yellow" }, { width: 760, height: 400 });
       b.add("frame", { x: 800, y: 0 }, { text: "Favourites", color: "green" }, { width: 400, height: 400 });
       const ideas = ["A wild idea", "A quick win", "What if…?", "Ask someone who knows", "Combine two ideas", "Flip it around"];
@@ -102,15 +102,15 @@ export const TEMPLATES: Template[] = [
     background: "dots",
     build: () => {
       const b = board();
-      b.add("text", { x: 0, y: -100 }, { text: "Project plan", size: "l" }, { width: 400 });
-      const columns: [string, ItemData["color"], string[]][] = [
-        ["To do", "blue", ["# Research\n- [ ] Look at examples\n- [ ] Write down questions", "Plan the first version"]],
-        ["Doing", "yellow", ["# Design\n- [x] Sketch ideas\n- [ ] Pick one"]],
-        ["Done", "green", ["- [x] Kick-off chat"]],
+      b.add("text", { x: 0, y: -100 }, { text: "Project plan", textStyle: "title" }, { width: 400 });
+      const columns: [string, ItemData["color"], [string, string][]][] = [
+        ["To do", "blue", [["Research", "- [ ] Look at examples\n- [ ] Write down questions"], ["Plan the first version", "Who it's for and what it must do"]]],
+        ["Doing", "yellow", [["Design", "- [x] Sketch ideas\n- [ ] Pick one"]]],
+        ["Done", "green", [["Kick-off", "- [x] Agree on goals"]]],
       ];
-      columns.forEach(([title, color, notes], c) => {
-        b.add("frame", { x: c * 340, y: 0 }, { text: title, color }, { width: 300, height: 520 });
-        notes.forEach((text, i) => b.add("note", { x: c * 340 + 40, y: 60 + i * 170 }, { text, color }));
+      columns.forEach(([name, color, notes], c) => {
+        b.add("frame", { x: c * 340, y: 0 }, { text: name, color }, { width: 300, height: 520 });
+        notes.forEach(([title, text], i) => b.add("note", { x: c * 340 + 40, y: 60 + i * 190 }, { title, text, color }));
       });
       return b;
     },
@@ -122,7 +122,8 @@ export const TEMPLATES: Template[] = [
     background: "plain",
     build: () => {
       const b = board();
-      b.add("text", { x: 0, y: -100 }, { text: "Should we…?", size: "l" }, { width: 500 });
+      b.add("text", { x: 0, y: -110 }, { text: "Should we…?", textStyle: "title" }, { width: 500 });
+      b.add("text", { x: 0, y: -50 }, { text: "Write the decision you're weighing up, then list both sides.", textStyle: "caption" }, { width: 600 });
       b.add("frame", { x: 0, y: 0 }, { text: "Pros", color: "green" }, { width: 420, height: 420 });
       b.add("frame", { x: 460, y: 0 }, { text: "Cons", color: "pink" }, { width: 420, height: 420 });
       ["It would be great because…", "Another upside"].forEach((text, i) =>

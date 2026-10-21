@@ -9,6 +9,19 @@ export type Size = (typeof SIZES)[number];
 export const SHAPES = ["rect", "ellipse", "diamond"] as const;
 export type ShapeKind = (typeof SHAPES)[number];
 
+export const TEXT_STYLES = ["title", "heading", "subheading", "body", "caption"] as const;
+export type TextStyle = (typeof TEXT_STYLES)[number];
+
+export const ALIGNS = ["left", "center", "right"] as const;
+export type Align = (typeof ALIGNS)[number];
+
+/** Outline thickness in board pixels; 0 means no outline. */
+export const OUTLINE_WIDTHS = [0, 1, 2, 4] as const;
+export type OutlineWidth = (typeof OUTLINE_WIDTHS)[number];
+
+export const OUTLINE_STYLES = ["solid", "dashed"] as const;
+export type OutlineStyle = (typeof OUTLINE_STYLES)[number];
+
 export const ITEM_TYPES = ["note", "text", "shape", "image", "frame", "ink", "link"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
@@ -29,6 +42,15 @@ export type ItemData = {
   /** Pen stroke as flat [x, y, pressure, …] triples relative to the item's corner. */
   points?: number[];
   url?: string;
+  /** A card title shown above a note's body. Present (even empty) means the title is shown. */
+  title?: string;
+  /** Typography preset for text items. */
+  textStyle?: TextStyle;
+  align?: Align;
+  /** Outline thickness; when unset, each type uses its own default. */
+  outline?: OutlineWidth;
+  outlineColor?: Color;
+  outlineStyle?: OutlineStyle;
 };
 
 export type BoardNode = Node<ItemData, ItemType>;
@@ -58,3 +80,22 @@ export const AUTO_HEIGHT: ReadonlySet<ItemType> = new Set(["note", "text", "link
 export const LINKABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "image", "link"]);
 /** Types you can type into. */
 export const EDITABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "frame", "link"]);
+
+/** Types that can have an outline. */
+export const OUTLINABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "image", "frame", "link"]);
+/** Types whose text can be aligned. */
+export const ALIGNABLE: ReadonlySet<ItemType> = new Set(["note", "text", "shape"]);
+/** Outline each type has before the user picks one. */
+export const DEFAULT_OUTLINE: Record<ItemType, OutlineWidth> = {
+  note: 0,
+  text: 0,
+  shape: 2,
+  image: 0,
+  frame: 1,
+  ink: 0,
+  link: 0,
+};
+
+/** Text items made before text styles existed used the S/M/L size instead. */
+export const textStyleOf = (d: ItemData): TextStyle =>
+  d.textStyle ?? (d.size === "l" ? "title" : d.size === "s" ? "body" : "subheading");

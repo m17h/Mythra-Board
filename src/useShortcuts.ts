@@ -136,7 +136,7 @@ export function useShortcuts(options: Options) {
       if (!clip) return;
       e.preventDefault();
       const text = clip.nodes
-        .map((n) => n.data.text || n.data.url || "")
+        .map((n) => [n.data.title, n.data.text || n.data.url].filter(Boolean).join("\n"))
         .filter(Boolean)
         .join("\n\n");
       e.clipboardData?.setData("text/plain", text || " ");

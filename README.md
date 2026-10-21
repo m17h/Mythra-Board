@@ -12,6 +12,8 @@ Built with [Tauri 2](https://tauri.app), React and [React Flow](https://reactflo
 - The **dock** at the bottom has: Note (N), Text (T), Shape (S: box, circle, diamond), Section (F), Pen (P), Eraser (E) and Image (I).
 - **Sections** group things: click anywhere in one to select it, drag it and everything inside moves along, double-click inside to add a note. Hold ⇧ and drag inside a section to box-select its contents. Select items and press ⌥⌘G to wrap them in a section; copying a section copies what's in it.
 - Items **snap** into line with each other while you drag (hold ⌥ to move freely, or turn it off in the board's ⋯ menu).
+- Select items to style them from the toolbar: **Colour**, **Outline** (thickness, solid or dashed, colour) and **Text** (Title / Heading / Subheading / Body / Caption for text blocks, size for notes and shapes, left/centre/right alignment, and an optional **card title** on notes).
+- **Appearance**: Auto (follows your Mac), Light, or a medium-gray Dark mode, from the home screen or a board's ⋯ menu.
 - **Right-click** anything for more options, including Bring to front / Send to back.
 - **Export as PNG** (⇧⌘E) saves a picture of the whole board.
 - Notes understand a little Markdown: `# heading`, `- bullet`, `- [ ] to-do` (tick it right on the board), `**bold**`, `*italic*`, and web addresses become clickable.

@@ -3,7 +3,12 @@ import { nanoid } from "nanoid";
 import { decorate } from "./layout";
 import { boardStore, cleanEdge, cleanNode, defaultLinkData, type BoardDoc } from "./store";
 import {
+  ALIGNS,
   AUTO_HEIGHT,
+  DEFAULT_OUTLINE,
+  OUTLINE_STYLES,
+  OUTLINE_WIDTHS,
+  TEXT_STYLES,
   BACKGROUNDS,
   COLORS,
   DEFAULT_NOTE_WIDTH,
@@ -33,6 +38,12 @@ type SavedItem = {
   asset?: string;
   points?: number[];
   url?: string;
+  title?: string;
+  textStyle?: string;
+  align?: string;
+  outline?: number;
+  outlineColor?: string;
+  outlineStyle?: string;
 };
 type SavedLink = { id: string; from: string; to: string; label: string; curve: string; arrow: string; dash: string };
 type SavedBoard = {
@@ -90,6 +101,12 @@ export function toSaved(doc: BoardDoc): SavedBoard {
       if (n.data.asset) item.asset = n.data.asset;
       if (n.data.points) item.points = n.data.points;
       if (n.data.url) item.url = n.data.url;
+      if (n.data.title !== undefined) item.title = n.data.title;
+      if (n.data.textStyle) item.textStyle = n.data.textStyle;
+      if (n.data.align) item.align = n.data.align;
+      if (n.data.outline !== undefined) item.outline = n.data.outline;
+      if (n.data.outlineColor) item.outlineColor = n.data.outlineColor;
+      if (n.data.outlineStyle) item.outlineStyle = n.data.outlineStyle;
       return item;
     }),
     links: doc.edges.map(cleanEdge).map((e) => ({
@@ -106,7 +123,7 @@ export function toSaved(doc: BoardDoc): SavedBoard {
 
 const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 const str = (v: unknown, fallback = "") => (typeof v === "string" ? v : fallback);
-const oneOf = <T extends string>(v: unknown, options: readonly T[], fallback: T): T =>
+const oneOf = <T extends string | number>(v: unknown, options: readonly T[], fallback: T): T =>
   options.includes(v as T) ? (v as T) : fallback;
 const clampSize = (v: unknown, fallback: number) => Math.min(20000, Math.max(8, num(v, fallback)));
 
@@ -141,6 +158,12 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (type === "image") node.data.asset = str(it.asset);
     if (type === "ink") node.data.points = it.points;
     if (type === "link") node.data.url = str(it.url);
+    if (type === "note" && typeof it.title === "string") node.data.title = it.title;
+    if (type === "text" && it.textStyle) node.data.textStyle = oneOf(it.textStyle, TEXT_STYLES, "body");
+    if (it.align) node.data.align = oneOf(it.align, ALIGNS, "left");
+    if (it.outline !== undefined) node.data.outline = oneOf(it.outline, OUTLINE_WIDTHS, DEFAULT_OUTLINE[type]);
+    if (it.outlineColor) node.data.outlineColor = oneOf(it.outlineColor, COLORS, "plain");
+    if (it.outlineStyle) node.data.outlineStyle = oneOf(it.outlineStyle, OUTLINE_STYLES, "solid");
     nodes.push(node);
   }
   const edges: LinkEdge[] = [];

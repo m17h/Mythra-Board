@@ -1,11 +1,39 @@
 import { NodeToolbar, Position, useStore as useFlowStore } from "@xyflow/react";
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { boardStore, defaultLinkData, useBoard } from "../store";
-import { COLORS, LINKABLE, SHAPES, SIZES, type Color, type ItemType, type LinkEdge, type ShapeKind, type Size } from "../types";
+import {
+  ALIGNABLE,
+  ALIGNS,
+  COLORS,
+  DEFAULT_OUTLINE,
+  LINKABLE,
+  OUTLINABLE,
+  OUTLINE_STYLES,
+  OUTLINE_WIDTHS,
+  SHAPES,
+  SIZES,
+  TEXT_STYLES,
+  textStyleOf,
+  type Align,
+  type Color,
+  type ItemData,
+  type ItemType,
+  type LinkEdge,
+  type OutlineWidth,
+  type ShapeKind,
+  type Size,
+  type TextStyle,
+} from "../types";
 import { useLinkGeometry } from "./LinkLine";
 import {
+  AlignCenterIcon,
+  AlignLeftIcon,
+  AlignRightIcon,
   ArrowBothIcon,
+  CardTitleIcon,
+  ChevronIcon,
+  OutlineIcon,
   ArrowEndIcon,
   ArrowNoneIcon,
   ChecklistIcon,
@@ -40,7 +68,7 @@ export const SHAPE_ICONS: Record<ShapeKind, ReactNode> = {
   ellipse: <EllipseIcon />,
   diamond: <DiamondIcon />,
 };
-const SIZED: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "ink", "link"]);
+const SIZED: ReadonlySet<ItemType> = new Set(["note", "shape", "ink", "link"]);
 
 export function ToolButton({
   label,
@@ -114,11 +142,242 @@ export function SizeButtons({ value, onPick }: { value: Size | null; onPick: (s:
 
 const only = <T,>(values: T[]): T | null => (values.length && values.every((v) => v === values[0]) ? values[0] : null);
 
-/** Colour, size, shape and arrange controls above the selected items. */
-export function SelectionToolbar() {
-  const selected = useBoard(
-    useShallow((s) => s.nodes.filter((n) => n.selected).map((n) => `${n.id}:${n.type}:${n.data.color}:${n.data.size}:${n.data.shape ?? ""}`)),
+type Panel = "color" | "outline" | "text";
+
+const TEXT_STYLE_NAMES: Record<TextStyle, string> = {
+  title: "Title",
+  heading: "Heading",
+  subheading: "Subheading",
+  body: "Body",
+  caption: "Caption",
+};
+const OUTLINE_NAMES: Record<OutlineWidth, string> = { 0: "None", 1: "Thin", 2: "Medium", 4: "Thick" };
+const ALIGN_ICONS: Record<Align, ReactNode> = { left: <AlignLeftIcon />, center: <AlignCenterIcon />, right: <AlignRightIcon /> };
+const TEXTUAL: ReadonlySet<ItemType> = new Set(["note", "text", "shape", "link"]);
+
+type Selected = { id: string; type: ItemType; data: ItemData };
+
+/** A toolbar button that opens a small panel of options underneath. */
+function PanelButton({
+  label,
+  open,
+  onToggle,
+  children,
+  panel,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+  panel: ReactNode;
+}) {
+  return (
+    <div className="panel-anchor">
+      <button
+        type="button"
+        className={`tool-btn tool-btn--panel${open ? " is-active" : ""}`}
+        title={label}
+        aria-label={label}
+        aria-expanded={open}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onToggle}
+      >
+        {children}
+        <ChevronIcon />
+      </button>
+      {open && <Popover label={label}>{panel}</Popover>}
+    </div>
   );
+}
+
+/**
+ * The toolbar sits just above the selected items, so panels open upwards (keeping the items
+ * in view while you change them) unless there isn't room above.
+ */
+function Popover({ label, children }: { label: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [below, setBelow] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const anchor = el?.parentElement;
+    if (!el || !anchor) return;
+    setBelow(anchor.getBoundingClientRect().top - el.offsetHeight - 12 < 8);
+  }, [children]);
+  return (
+    <div
+      ref={ref}
+      className={`popover${below ? " popover--below" : " popover--above"}`}
+      role="dialog"
+      aria-label={label}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="popover__row">
+      <div className="popover__label">{label}</div>
+      <div className="popover__controls">{children}</div>
+    </div>
+  );
+}
+
+function ColorPanel({ items }: { items: Selected[] }) {
+  const colored = items.filter((i) => i.type !== "image");
+  const strong = colored.every((i) => i.type === "ink" || i.type === "text");
+  const inks = items.filter((i) => i.type === "ink");
+  return (
+    <>
+      <Row label={strong ? "Colour" : "Fill"}>
+        <Swatches
+          value={only(colored.map((i) => i.data.color))}
+          strong={strong}
+          onPick={(c) => boardStore.getState().setColor(colored.map((i) => i.id), c)}
+        />
+      </Row>
+      {inks.length > 0 && (
+        <Row label="Thickness">
+          {SIZES.map((sz) => (
+            <ToolButton
+              key={sz}
+              label={{ s: "Thin", m: "Medium", l: "Thick" }[sz]}
+              active={only(inks.map((i) => i.data.size)) === sz}
+              onClick={() => boardStore.getState().setSize(inks.map((i) => i.id), sz)}
+            >
+              <span className={`pen-dot pen-dot--${sz}`} />
+            </ToolButton>
+          ))}
+        </Row>
+      )}
+    </>
+  );
+}
+
+function OutlinePanel({ items }: { items: Selected[] }) {
+  const targets = items.filter((i) => OUTLINABLE.has(i.type));
+  const ids = targets.map((i) => i.id);
+  const width = only(targets.map((i) => i.data.outline ?? DEFAULT_OUTLINE[i.type]));
+  const style = only(targets.map((i) => i.data.outlineStyle ?? "solid"));
+  const color = only(targets.map((i) => i.data.outlineColor ?? null));
+  const store = boardStore.getState();
+  const set = (patch: Partial<ItemData>) => store.styleItems(ids, patch, OUTLINABLE);
+  // Picking a colour or style on something without an outline gives it one, so the choice shows.
+  const ensureVisible = (patch: Partial<ItemData>) => set(width === 0 ? { ...patch, outline: 2 } : patch);
+  return (
+    <>
+      <Row label="Thickness">
+        <div className="segmented segmented--compact">
+          {OUTLINE_WIDTHS.map((w) => (
+            <button
+              key={w}
+              type="button"
+              className={`segmented__item${width === w ? " is-active" : ""}`}
+              title={OUTLINE_NAMES[w]}
+              aria-label={`${OUTLINE_NAMES[w]} outline`}
+              onClick={() => set({ outline: w })}
+            >
+              {w === 0 ? <span className="outline-none-glyph" /> : <span className="outline-sample" style={{ borderWidth: w }} />}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Style">
+        <div className="segmented segmented--compact">
+          {OUTLINE_STYLES.map((st) => (
+            <button
+              key={st}
+              type="button"
+              className={`segmented__item${style === st && width !== 0 ? " is-active" : ""}`}
+              aria-label={`${st === "solid" ? "Solid" : "Dashed"} outline`}
+              onClick={() => ensureVisible({ outlineStyle: st })}
+            >
+              <span className={`line-sample line-sample--${st}`} />
+              {st === "solid" ? "Solid" : "Dashed"}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Colour">
+        <button
+          type="button"
+          className={`swatch swatch--auto${color === null && width !== 0 ? " is-active" : ""}`}
+          title="Match the fill"
+          aria-label="Match the fill"
+          onClick={() => {
+            const patch: Partial<ItemData> = { outlineColor: undefined };
+            ensureVisible(patch);
+          }}
+        />
+        <Swatches value={width === 0 ? null : color} strong onPick={(c) => ensureVisible({ outlineColor: c })} />
+      </Row>
+    </>
+  );
+}
+
+function TextPanel({ items }: { items: Selected[] }) {
+  const store = boardStore.getState();
+  const texts = items.filter((i) => i.type === "text");
+  const sized = items.filter((i) => i.type !== "text" && SIZED.has(i.type));
+  const alignable = items.filter((i) => ALIGNABLE.has(i.type));
+  const single = items.length === 1 ? items[0] : null;
+  const align = only(alignable.map((i) => i.data.align ?? (i.type === "shape" ? "center" : "left")));
+  return (
+    <>
+      {texts.length > 0 && (
+        <Row label="Style">
+          <div className="style-list">
+            {TEXT_STYLES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`style-option ts-sample--${t}${only(texts.map((i) => textStyleOf(i.data))) === t ? " is-active" : ""}`}
+                onClick={() => store.styleItems(texts.map((i) => i.id), { textStyle: t })}
+              >
+                {TEXT_STYLE_NAMES[t]}
+              </button>
+            ))}
+          </div>
+        </Row>
+      )}
+      {sized.length > 0 && (
+        <Row label="Size">
+          <SizeButtons value={only(sized.map((i) => i.data.size))} onPick={(s) => store.setSize(sized.map((i) => i.id), s)} />
+        </Row>
+      )}
+      {alignable.length > 0 && (
+        <Row label="Align">
+          {ALIGNS.map((a) => (
+            <ToolButton
+              key={a}
+              label={`Align ${a}`}
+              active={align === a}
+              onClick={() => store.styleItems(alignable.map((i) => i.id), { align: a }, ALIGNABLE)}
+            >
+              {ALIGN_ICONS[a]}
+            </ToolButton>
+          ))}
+        </Row>
+      )}
+      {single?.type === "note" && (
+        <Row label="Card">
+          <label className="menu__item menu__toggle popover__toggle">
+            <span>Title</span>
+            <input type="checkbox" checked={single.data.title !== undefined} onChange={() => store.toggleTitle(single.id)} />
+            <span className="switch" aria-hidden />
+          </label>
+        </Row>
+      )}
+    </>
+  );
+}
+
+/** Colour, outline, text and arrange controls above the selected items. */
+export function SelectionToolbar() {
+  const selectedIds = useBoard(useShallow((s) => s.nodes.filter((n) => n.selected).map((n) => `${n.id}:${n.type}`)));
+  const selectedData = useBoard(useShallow((s) => s.nodes.filter((n) => n.selected).map((n) => n.data)));
   const hidden = useBoard(
     (s) =>
       s.connecting ||
@@ -127,55 +386,94 @@ export function SelectionToolbar() {
       s.nodes.some((n) => n.dragging) ||
       s.edges.some((e) => e.selected),
   );
-  if (!selected.length) return null;
+  const [open, setOpen] = useState<Panel | null>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  const key = selectedIds.join(",");
 
-  const items = selected.map((key) => {
-    const [id, type, color, size, shape] = key.split(":");
-    return { id, type: type as ItemType, color: color as Color, size: size as Size, shape: shape as ShapeKind };
+  // Panels close when the selection changes or you click elsewhere.
+  useEffect(() => setOpen(null), [key]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!bar.current?.contains(e.target as Node)) setOpen(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setOpen(null);
+      }
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  if (!selectedIds.length || selectedIds.length !== selectedData.length) return null;
+
+  const items: Selected[] = selectedIds.map((k, i) => {
+    const [id, type] = k.split(":");
+    return { id, type: type as ItemType, data: selectedData[i] };
   });
   const ids = items.map((i) => i.id);
   const colored = items.filter((i) => i.type !== "image");
-  const sized = items.filter((i) => SIZED.has(i.type));
   const shapes = items.every((i) => i.type === "shape");
+  const outlinable = items.some((i) => OUTLINABLE.has(i.type));
+  const textual = items.some((i) => TEXTUAL.has(i.type));
   const single = items.length === 1 ? items[0] : null;
   const store = boardStore.getState();
-  const strong = colored.every((i) => i.type === "ink" || i.type === "text");
+  const toggle = (p: Panel) => setOpen((o) => (o === p ? null : p));
+  const fill = only(colored.map((i) => i.data.color));
+  const strongFill = colored.every((i) => i.type === "ink" || i.type === "text");
 
   return (
     <NodeToolbar nodeId={ids} isVisible={!hidden} position={Position.Top} offset={items.some((i) => i.type === "frame") ? 48 : 14}>
-      <div className="floating-bar" onDoubleClick={(e) => e.stopPropagation()}>
+      <div ref={bar} className="floating-bar" onDoubleClick={(e) => e.stopPropagation()}>
         {colored.length > 0 && (
-          <>
-            <Swatches value={only(colored.map((i) => i.color))} strong={strong} onPick={(c) => store.setColor(colored.map((i) => i.id), c)} />
-            <span className="bar-divider" />
-          </>
+          <PanelButton label="Colour" open={open === "color"} onToggle={() => toggle("color")} panel={<ColorPanel items={items} />}>
+            <span className={`color-dot color--${fill ?? "plain"}${strongFill ? " color-dot--strong" : ""}${fill ? "" : " is-mixed"}`} />
+          </PanelButton>
         )}
+        {outlinable && (
+          <PanelButton label="Outline" open={open === "outline"} onToggle={() => toggle("outline")} panel={<OutlinePanel items={items} />}>
+            <OutlineIcon />
+          </PanelButton>
+        )}
+        {textual && (
+          <PanelButton label="Text" open={open === "text"} onToggle={() => toggle("text")} panel={<TextPanel items={items} />}>
+            <span className="text-glyph">Aa</span>
+          </PanelButton>
+        )}
+        <span className="bar-divider" />
         {shapes &&
           SHAPES.map((k) => (
-            <ToolButton key={k} label={SHAPE_NAMES[k]} active={only(items.map((i) => i.shape)) === k} onClick={() => store.setShape(ids, k)}>
+            <ToolButton key={k} label={SHAPE_NAMES[k]} active={only(items.map((i) => i.data.shape)) === k} onClick={() => store.setShape(ids, k)}>
               {SHAPE_ICONS[k]}
             </ToolButton>
           ))}
         {shapes && <span className="bar-divider" />}
-        {sized.length > 0 && (
-          <>
-            <SizeButtons value={only(sized.map((i) => i.size))} onPick={(s) => store.setSize(sized.map((i) => i.id), s)} />
-            <span className="bar-divider" />
-          </>
-        )}
         {single?.type === "note" && (
-          <ToolButton
-            label="Add a to-do"
-            onClick={() => {
-              const note = boardStore.getState().nodes.find((n) => n.id === single.id);
-              if (!note) return;
-              const text = note.data.text;
-              store.startEditing(single.id);
-              store.setText(single.id, `${text}${text && !text.endsWith("\n") ? "\n" : ""}- [ ] `);
-            }}
-          >
-            <ChecklistIcon />
-          </ToolButton>
+          <>
+            <ToolButton
+              label={single.data.title === undefined ? "Add a card title" : "Remove the card title"}
+              active={single.data.title !== undefined}
+              onClick={() => store.toggleTitle(single.id)}
+            >
+              <CardTitleIcon />
+            </ToolButton>
+            <ToolButton
+              label="Add a to-do"
+              onClick={() => {
+                const text = single.data.text;
+                store.startEditing(single.id);
+                store.setText(single.id, `${text}${text && !text.endsWith("\n") ? "\n" : ""}- [ ] `);
+              }}
+            >
+              <ChecklistIcon />
+            </ToolButton>
+          </>
         )}
         {single && LINKABLE.has(single.type) && (
           <ToolButton label="Add linked note (Tab)" onClick={() => store.addLinkedNote(single.id, Position.Right)}>

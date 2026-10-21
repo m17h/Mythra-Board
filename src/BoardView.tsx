@@ -25,6 +25,8 @@ import { rectOf } from "./layout";
 import { isTauri, type SaveStatus } from "./persistence";
 import { boardStore, pauseSnapping, setSnapZoom, useBoard } from "./store";
 import { BACKGROUNDS, DEFAULT_NOTE_WIDTH, type BoardBackground, type BoardNode, type Color, type LinkEdge } from "./types";
+import { ThemeSwitch } from "./components/ThemeSwitch";
+import { useTheme } from "./theme";
 import { useShortcuts } from "./useShortcuts";
 
 const IS_TAURI = isTauri();
@@ -52,6 +54,7 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
   const [showHelp, setShowHelp] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const { theme } = useTheme();
   const [notice, setNotice] = useState<string | null>(null);
   const rf = useReactFlow<BoardNode, LinkEdge>();
   const pointer = useRef<{ x: number; y: number } | null>(null);
@@ -279,7 +282,7 @@ export default function BoardView({ status, onHome }: { status: SaveStatus; onHo
         disableKeyboardA11y
         nodeDragThreshold={2}
         onlyRenderVisibleElements={nodes.length > 400}
-        colorMode="system"
+        colorMode={theme}
         attributionPosition="top-right"
       >
         {background !== "plain" && (
@@ -471,6 +474,9 @@ function TitleBar({ status, onHome, onExport }: { status: SaveStatus; onHome: ()
           <>
             <div className="menu-scrim" onPointerDown={() => setMenu(false)} />
             <div className="menu" role="menu">
+              <div className="menu__label">Appearance</div>
+              <ThemeSwitch labels />
+              <div className="menu__sep" />
               <div className="menu__label">Background</div>
               <div className="segmented">
                 {BACKGROUNDS.map((b) => (

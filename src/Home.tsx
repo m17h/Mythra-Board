@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DuplicateIcon, MoreIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
+import { ThemeSwitch } from "./components/ThemeSwitch";
 import Thumbnail from "./components/Thumbnail";
 import { isTauri, listBoards, newBoardId, restoreBoard, trashBoard, writeBoard } from "./persistence";
 import type { BoardDoc } from "./store";
@@ -145,7 +146,9 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
       ? boards.filter(
           (b) =>
             b.title.toLowerCase().includes(q) ||
-            b.nodes.some((n) => n.data.text.toLowerCase().includes(q) || n.data.url?.toLowerCase().includes(q)),
+            b.nodes.some((n) =>
+              [n.data.text, n.data.title, n.data.url].some((t) => t?.toLowerCase().includes(q)),
+            ),
         )
       : boards;
     const sorted = [...matches].sort((a, b) =>
@@ -221,6 +224,7 @@ export default function Home({ onOpen }: { onOpen: (doc: BoardDoc) => void }) {
               }}
             />
           </label>
+          <ThemeSwitch />
           <button type="button" className="primary-btn" onClick={() => void create(TEMPLATES[0])} title="New board (⌘N)">
             <PlusIcon />
             New board

@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: { port: 1420, strictPort: true },
-  build: { target: "safari16", outDir: "dist" },
+  // The app loads its code from disk, not the network, so the usual 500 kB web warning doesn't apply.
+  build: { target: "safari16", outDir: "dist", chunkSizeWarningLimit: 900 },
   test: { environment: "node" },
 });

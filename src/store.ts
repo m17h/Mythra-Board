@@ -28,6 +28,8 @@ import {
 
 export type Tool = "select" | "hand" | "note" | "text" | "shape" | "frame" | "pen" | "eraser";
 
+export type EditField = "title" | "body";
+
 export type Clip = { nodes: BoardNode[]; links: LinkEdge[] };
 
 /** Everything that is saved for a board. */
@@ -86,6 +88,8 @@ export type BoardState = {
   penColor: Color;
   penSize: Size;
   editingId: string | null;
+  /** Which part of the item is being typed into. */
+  editingField: EditField;
   editingLabelId: string | null;
   connecting: boolean;
   linkStyle: LinkStyle;
@@ -129,9 +133,14 @@ export type BoardState = {
   setColor: (ids: string[], color: Color) => void;
   setSize: (ids: string[], size: Size) => void;
   setShape: (ids: string[], shape: ShapeKind) => void;
+  /** Change look settings (outline, text style, alignment…) on several items in one step. */
+  styleItems: (ids: string[], patch: Partial<ItemData>, only?: ReadonlySet<ItemType>) => void;
+  /** Show or remove a note's card title. */
+  toggleTitle: (id: string) => void;
+  setItemTitle: (id: string, title: string) => void;
   toggleTask: (id: string, line: number) => void;
   frameSelection: () => string | null;
-  startEditing: (id: string) => void;
+  startEditing: (id: string, field?: EditField) => void;
   stopEditing: () => void;
 
   canConnect: (source: string, target: string) => boolean;
@@ -163,6 +172,12 @@ function cleanData(d: ItemData): ItemData {
   if (d.asset) out.asset = d.asset;
   if (d.points) out.points = d.points;
   if (d.url) out.url = d.url;
+  if (d.title !== undefined) out.title = d.title;
+  if (d.textStyle) out.textStyle = d.textStyle;
+  if (d.align) out.align = d.align;
+  if (d.outline !== undefined) out.outline = d.outline;
+  if (d.outlineColor) out.outlineColor = d.outlineColor;
+  if (d.outlineStyle && d.outlineStyle !== "solid") out.outlineStyle = d.outlineStyle;
   return out;
 }
 
@@ -300,6 +315,7 @@ export function createBoardStore() {
       penColor: "plain",
       penSize: "m",
       editingId: null,
+      editingField: "body",
       editingLabelId: null,
       connecting: false,
       linkStyle: { curve: "curved", arrow: "end", dash: "solid" },
@@ -539,6 +555,36 @@ export function createBoardStore() {
       setColor: (ids, color) => updateData(ids, () => ({ color })),
       setSize: (ids, size) => updateData(ids, () => ({ size })),
       setShape: (ids, shape) => updateData(ids, (n) => (n.type === "shape" ? { shape } : null)),
+      styleItems: (ids, patch, only) => updateData(ids, (n) => (!only || only.has(n.type) ? patch : null)),
+
+      setItemTitle: (id, title) =>
+        set((s) => ({ nodes: s.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, title } } : n)) })),
+
+      toggleTitle: (id) => {
+        const item = get().nodes.find((n) => n.id === id);
+        if (!item || item.type !== "note") return;
+        const adding = item.data.title === undefined;
+        // Adding a title to the note you're typing in keeps you typing in it.
+        const editingThis = get().editingId === id;
+        if (!editingThis) get().stopEditing();
+        record(() =>
+          set((s) => ({
+            nodes: s.nodes.map((n) => {
+              if (n.id !== id) return n;
+              const data = { ...n.data };
+              if (adding) data.title = "";
+              else delete data.title;
+              return { ...n, data };
+            }),
+          })),
+        );
+        if (editingThis) {
+          get().begin();
+          set({ editingField: adding ? "title" : "body" });
+        } else if (adding) {
+          get().startEditing(id, "title");
+        }
+      },
 
       toggleTask: (id, line) =>
         updateData([id], (n) => {
@@ -562,12 +608,15 @@ export function createBoardStore() {
         return id;
       },
 
-      startEditing: (id) => {
-        if (get().editingId === id) return;
+      startEditing: (id, field = "body") => {
+        if (get().editingId === id) {
+          set({ editingField: field });
+          return;
+        }
         get().stopEditing();
         if (!get().nodes.some((n) => n.id === id)) return;
         get().begin();
-        set({ editingId: id, editingLabelId: null });
+        set({ editingId: id, editingField: field, editingLabelId: null });
       },
 
       stopEditing: () => {
@@ -577,14 +626,15 @@ export function createBoardStore() {
         const item = get().nodes.find((n) => n.id === id);
         const wasFresh = fresh?.id === id ? fresh : null;
         fresh = null;
-        if (item && wasFresh && !item.data.text.trim()) {
+        if (item && wasFresh && !item.data.text.trim() && !item.data.title?.trim()) {
           // Nothing was typed into a brand-new note: remove it as if it never existed.
           pending = null;
           set((s) => ({
             nodes: s.nodes.filter((n) => n.id !== id),
             edges: s.edges.filter((e) => e.source !== id && e.target !== id),
           }));
-          if (get().past.length === wasFresh.historyLength) set((s) => ({ past: s.past.slice(0, -1) }));
+          // Forget every step since it was created, so undo doesn't bring back an empty note.
+          if (get().past.length >= wasFresh.historyLength) set((s) => ({ past: s.past.slice(0, wasFresh.historyLength - 1) }));
           return;
         }
         get().commit();

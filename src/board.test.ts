@@ -431,3 +431,52 @@ describe("arranging", () => {
     expect(s.getState().nodes[1].type).toBe("frame");
   });
 });
+
+describe("styles", () => {
+  it("sets outlines, text styles and alignment in one undoable step", async () => {
+    const { OUTLINABLE } = await import("./types");
+    const s = createBoardStore();
+    const n = s.getState().addNote({ x: 0, y: 0 }, { data: { text: "a" } });
+    const ink = s.getState().addInk([0, 0, 0.5, 10, 10, 0.5], "blue", "m")!;
+    s.getState().styleItems([n, ink], { outline: 4, outlineColor: "pink", outlineStyle: "dashed" }, OUTLINABLE);
+    const get = (id: string) => s.getState().nodes.find((x) => x.id === id)!.data;
+    expect(get(n)).toMatchObject({ outline: 4, outlineColor: "pink", outlineStyle: "dashed" });
+    expect(get(ink).outline).toBeUndefined();
+    s.getState().undo();
+    expect(get(n).outline).toBeUndefined();
+  });
+
+  it("adds and removes a card title, and keeps a fresh note that only has a title", () => {
+    const s = createBoardStore();
+    const n = s.getState().addNote({ x: 0, y: 0 }, { edit: true });
+    s.getState().toggleTitle(n);
+    expect(s.getState().editingField).toBe("title");
+    s.getState().setItemTitle(n, "Plan");
+    s.getState().stopEditing();
+    expect(s.getState().nodes[0].data.title).toBe("Plan");
+    s.getState().toggleTitle(n);
+    expect(s.getState().nodes[0].data.title).toBeUndefined();
+    s.getState().undo();
+    expect(s.getState().nodes[0].data.title).toBe("Plan");
+  });
+
+  it("maps old text sizes to text styles", async () => {
+    const { textStyleOf } = await import("./types");
+    expect(textStyleOf({ text: "", color: "plain", size: "l" })).toBe("title");
+    expect(textStyleOf({ text: "", color: "plain", size: "m" })).toBe("subheading");
+    expect(textStyleOf({ text: "", color: "plain", size: "m", textStyle: "caption" })).toBe("caption");
+  });
+
+  it("saves and reopens the new settings, rejecting bad values", () => {
+    const s = createBoardStore();
+    s.getState().addNote({ x: 0, y: 0 }, { data: { text: "b", title: "T", align: "center", outline: 2, outlineColor: "green" } });
+    s.getState().addItem("text", { x: 0, y: 100 }, { data: { text: "Big", textStyle: "heading", align: "right" } });
+    s.getState().addItem("shape", { x: 0, y: 200 }, { data: { shape: "ellipse", outline: 0, align: "left" } });
+    const back = fromSaved(JSON.parse(JSON.stringify(toSaved(docOf(s)))));
+    expect(back.nodes.map((n) => n.data)).toEqual(s.getState().nodes.map((n) => n.data));
+    const bad = fromSaved({
+      items: [{ id: "x", type: "text", text: "t", textStyle: "huge", align: "diagonal", outline: 7, outlineColor: "neon", outlineStyle: "wavy" }],
+    });
+    expect(bad.nodes[0].data).toMatchObject({ textStyle: "body", align: "left", outline: 0, outlineColor: "plain", outlineStyle: "solid" });
+  });
+});

@@ -231,3 +231,52 @@ export const SectionIcon = () => (
     <path d="M3.5 3.5h7" />
   </Icon>
 );
+export const AlignLeftIcon = () => (
+  <Icon>
+    <path d="M4 6h16M4 10.5h10M4 15h16M4 19.5h10" />
+  </Icon>
+);
+export const AlignCenterIcon = () => (
+  <Icon>
+    <path d="M4 6h16M7 10.5h10M4 15h16M7 19.5h10" />
+  </Icon>
+);
+export const AlignRightIcon = () => (
+  <Icon>
+    <path d="M4 6h16M10 10.5h10M4 15h16M10 19.5h10" />
+  </Icon>
+);
+export const OutlineIcon = () => (
+  <Icon>
+    <rect x="4" y="4" width="16" height="16" rx="3.5" strokeWidth="2.6" />
+  </Icon>
+);
+export const CardTitleIcon = () => (
+  <Icon>
+    <rect x="3.5" y="4" width="17" height="16" rx="3" />
+    <path d="M7 8.5h7" strokeWidth="2.4" />
+    <path d="M3.5 11.5h17M7 15h10" />
+  </Icon>
+);
+export const ChevronIcon = () => (
+  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+    <path d="M1.5 3 4 5.5 6.5 3" />
+  </svg>
+);
+export const SunIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
+  </Icon>
+);
+export const MoonIcon = () => (
+  <Icon>
+    <path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z" />
+  </Icon>
+);
+export const AutoThemeIcon = () => (
+  <Icon>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
+  </Icon>
+);

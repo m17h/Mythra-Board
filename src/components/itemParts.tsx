@@ -1,6 +1,6 @@
 import { Handle, NodeResizeControl, NodeResizer, Position, ResizeControlVariant } from "@xyflow/react";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { boardStore } from "../store";
+import { boardStore, useBoard, type EditField } from "../store";
 import { MAX_NOTE_WIDTH, MIN_NOTE_WIDTH } from "../types";
 
 const SIDES = [Position.Top, Position.Right, Position.Bottom, Position.Left] as const;
@@ -75,11 +75,13 @@ export function BoxResizer({ visible, keepAspectRatio, minWidth = 60, minHeight 
 
 /**
  * The in-place text editor used by every item you can type into. It grows with its text,
- * takes focus as soon as the item can accept it, and finishes on Esc or ⌘Enter.
+ * takes focus as soon as the item can accept it, and finishes on Esc or ⌘Enter. A note
+ * with a card title has two of these (title and body); focus moves between them freely.
  */
 export function TextEditor({
   id,
   text,
+  field = "body",
   className = "",
   placeholder = "Type an idea…",
   singleLine,
@@ -87,12 +89,14 @@ export function TextEditor({
 }: {
   id: string;
   text: string;
+  field?: EditField;
   className?: string;
   placeholder?: string;
   singleLine?: boolean;
   canBranch?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const active = useBoard((s) => s.editingId === id && s.editingField === field);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -102,6 +106,7 @@ export function TextEditor({
   }, [text]);
 
   useEffect(() => {
+    if (!active) return;
     // A brand-new item may not be visible (and so can't take focus) until it has been
     // measured, so keep trying for a few frames.
     let frame = 0;
@@ -109,9 +114,10 @@ export function TextEditor({
     const focus = () => {
       const el = ref.current;
       if (!el) return;
+      if (document.activeElement === el) return;
       el.focus({ preventScroll: true });
       if (document.activeElement === el) {
-        if (singleLine) el.select();
+        if (singleLine && field === "body") el.select();
         else el.setSelectionRange(el.value.length, el.value.length);
       } else if (tries++ < 30) {
         frame = requestAnimationFrame(focus);
@@ -119,11 +125,17 @@ export function TextEditor({
     };
     focus();
     return () => cancelAnimationFrame(frame);
-  }, [singleLine]);
+  }, [active, singleLine, field]);
 
   const finish = () => {
     boardStore.getState().stopEditing();
     boardStore.getState().selectOnly([id]);
+  };
+
+  const write = (value: string) => {
+    const v = singleLine ? value.replace(/\n/g, " ") : value;
+    if (field === "title") boardStore.getState().setItemTitle(id, v);
+    else boardStore.getState().setText(id, v);
   };
 
   return (
@@ -134,15 +146,27 @@ export function TextEditor({
       placeholder={placeholder}
       spellCheck={!singleLine}
       rows={1}
-      onChange={(e) => boardStore.getState().setText(id, singleLine ? e.target.value.replace(/\n/g, " ") : e.target.value)}
-      onBlur={() => {
+      onFocus={() => {
+        if (!active) boardStore.getState().startEditing(id, field);
+      }}
+      onChange={(e) => write(e.target.value)}
+      onBlur={(e) => {
+        // Moving between a card's title and body keeps editing going.
+        const next = e.relatedTarget as Element | null;
+        if (next?.closest(`.react-flow__node[data-id="${CSS.escape(id)}"]`)) return;
         if (boardStore.getState().editingId === id) boardStore.getState().stopEditing();
       }}
       onKeyDown={(e) => {
+        if (field === "title" && (e.key === "Enter" || e.key === "ArrowDown") && !e.metaKey) {
+          // From a card title, Enter moves on to the body.
+          e.preventDefault();
+          boardStore.getState().startEditing(id, "body");
+          return;
+        }
         if (e.key === "Tab" && canBranch) {
           // Finish this item and branch straight into a new linked note.
           e.preventDefault();
-          if (!text.trim()) return;
+          if (!text.trim() && field === "body") return;
           boardStore.getState().stopEditing();
           boardStore.getState().addLinkedNote(id, e.shiftKey ? Position.Left : Position.Right);
           return;

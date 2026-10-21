@@ -1,10 +1,10 @@
 import { useReactFlow, type NodeProps } from "@xyflow/react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { hostOf } from "../images";
 import { strokePath } from "../ink";
 import { assetUrl, openExternal } from "../persistence";
 import { boardStore, useBoard } from "../store";
-import { DEFAULT_NOTE_WIDTH, type BoardNode } from "../types";
+import { DEFAULT_NOTE_WIDTH, DEFAULT_OUTLINE, textStyleOf, type BoardNode, type ItemData, type ItemType } from "../types";
 import { GlobeIcon, OpenIcon } from "./icons";
 import { BoxResizer, LinkHandles, TextEditor, WidthResizers } from "./itemParts";
 import RichText, { taskStats } from "./RichText";
@@ -20,29 +20,80 @@ const toggle = (id: string) => (line: number) => boardStore.getState().toggleTas
 
 const cls = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" ");
 
-/** Sticky-style notes, and free text (the same thing without the card). */
+/**
+ * Classes and CSS variables for an item's outline and text alignment. Outlines are drawn by
+ * CSS from `--ow` (width), `--os` (solid/dashed) and `--oc` (colour).
+ */
+function look(type: ItemType, data: ItemData): { className: string; style: CSSProperties } {
+  const width = data.outline ?? DEFAULT_OUTLINE[type];
+  const style = {
+    "--ow": `${width}px`,
+    "--os": data.outlineStyle ?? "solid",
+    ...(data.outlineColor ? { "--oc": `var(--ink-${data.outlineColor})` } : {}),
+  } as CSSProperties;
+  return {
+    className: cls(
+      width > 0 && "has-outline",
+      data.outline !== undefined && "outline-set",
+      data.outlineStyle === "dashed" && "is-dashed-outline",
+      data.align && `align--${data.align}`,
+    ),
+    style,
+  };
+}
+
+/** Sticky-style notes (optionally with a card title), and free text (the same thing without the card). */
 export const NoteItem = memo(function NoteItem({ id, type, data, selected, dragging }: NodeProps<BoardNode>) {
   const editing = useEditing(id);
   const tasks = useMemo(() => taskStats(data.text), [data.text]);
   const isText = type === "text";
+  const hasTitle = !isText && data.title !== undefined;
+  const { className, style } = look(type, data);
   return (
     <div
       className={cls(
         isText ? "textitem" : "note",
+        isText && `ts--${textStyleOf(data)}`,
         `color--${data.color}`,
         `size--${data.size}`,
+        hasTitle && "has-title",
+        hasTitle && (data.text || editing) && "has-body",
+        className,
         selected && "is-selected",
         editing && "is-editing",
         dragging && "is-dragging",
       )}
+      style={style}
       onDoubleClick={startEditing(id)}
     >
+      {hasTitle &&
+        (editing ? (
+          <TextEditor id={id} field="title" text={data.title ?? ""} className="note__title" placeholder="Title" singleLine />
+        ) : (
+          <div
+            className={cls("note__title", !data.title && "is-empty")}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              boardStore.getState().startEditing(id, "title");
+            }}
+          >
+            {data.title || "Untitled"}
+          </div>
+        ))}
       {editing ? (
-        <TextEditor id={id} text={data.text} className="item-text" placeholder={isText ? "Type something…" : "Type an idea…"} canBranch />
-      ) : (
-        <div className={cls("item-text", !data.text && "is-empty")}>
-          {data.text ? <RichText text={data.text} onToggle={toggle(id)} /> : isText ? "Text" : "Empty note"}
+        <TextEditor
+          id={id}
+          text={data.text}
+          className="item-text"
+          placeholder={isText ? "Type something…" : hasTitle ? "Add details…" : "Type an idea…"}
+          canBranch
+        />
+      ) : data.text ? (
+        <div className="item-text">
+          <RichText text={data.text} onToggle={toggle(id)} />
         </div>
+      ) : (
+        !hasTitle && <div className="item-text is-empty">{isText ? "Text" : "Empty note"}</div>
       )}
       {!isText && tasks.total > 0 && !editing && (
         <div className="task-progress" title={`${tasks.done} of ${tasks.total} done`}>
@@ -63,14 +114,25 @@ export const NoteItem = memo(function NoteItem({ id, type, data, selected, dragg
 export const ShapeItem = memo(function ShapeItem({ id, data, selected, dragging }: NodeProps<BoardNode>) {
   const editing = useEditing(id);
   const shape = data.shape ?? "rect";
+  const { className, style } = look("shape", data);
   return (
     <div
-      className={cls("shape", `shape--${shape}`, `color--${data.color}`, `size--${data.size}`, selected && "is-selected", editing && "is-editing", dragging && "is-dragging")}
+      className={cls(
+        "shape",
+        `shape--${shape}`,
+        `color--${data.color}`,
+        `size--${data.size}`,
+        className,
+        selected && "is-selected",
+        editing && "is-editing",
+        dragging && "is-dragging",
+      )}
+      style={style}
       onDoubleClick={startEditing(id)}
     >
       {shape === "diamond" && (
         <svg className="shape__outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-          <polygon points="50,1.5 98.5,50 50,98.5 1.5,50" vectorEffect="non-scaling-stroke" />
+          <polygon points="50,0 100,50 50,100 0,50" vectorEffect="non-scaling-stroke" />
         </svg>
       )}
       <div className="shape__label">
@@ -104,8 +166,9 @@ export const ImageItem = memo(function ImageItem({ id, data, selected, dragging 
       live = false;
     };
   }, [data.asset]);
+  const { className, style } = look("image", data);
   return (
-    <div className={cls("image", selected && "is-selected", dragging && "is-dragging")}>
+    <div className={cls("image", `color--${data.color}`, className, selected && "is-selected", dragging && "is-dragging")} style={style}>
       {src ? (
         <img src={src} alt="" draggable={false} />
       ) : (
@@ -122,9 +185,11 @@ export const FrameItem = memo(function FrameItem({ id, data, selected }: NodePro
   const editing = useEditing(id);
   const dropTarget = useBoard((s) => s.dropFrameId === id);
   const rf = useReactFlow();
+  const { className, style } = look("frame", data);
   return (
     <div
-      className={cls("frame", `color--${data.color}`, selected && "is-selected", editing && "is-editing", dropTarget && "is-drop-target")}
+      className={cls("frame", `color--${data.color}`, className, selected && "is-selected", editing && "is-editing", dropTarget && "is-drop-target")}
+      style={style}
       onDoubleClick={(e) => {
         // Double-clicking inside a section adds a note there, just like on the open board.
         if (e.target !== e.currentTarget) return;
@@ -159,9 +224,11 @@ export const LinkCardItem = memo(function LinkCardItem({ id, data, selected, dra
   const editing = useEditing(id);
   const url = data.url ?? "";
   const host = hostOf(url);
+  const { className, style } = look("link", data);
   return (
     <div
-      className={cls("note", "linkcard", `color--${data.color}`, selected && "is-selected", editing && "is-editing", dragging && "is-dragging")}
+      className={cls("note", "linkcard", `color--${data.color}`, className, selected && "is-selected", editing && "is-editing", dragging && "is-dragging")}
+      style={style}
       onDoubleClick={startEditing(id)}
     >
       <div className="linkcard__icon">
