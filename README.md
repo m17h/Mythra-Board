@@ -30,7 +30,7 @@ Boards save automatically. Each save is written safely with a backup; deleted bo
 ```sh
 pnpm install
 pnpm app        # run the desktop app with live reload
-pnpm dev        # run in a browser at http://localhost:1420 (saves to browser storage)
+pnpm dev        # run in a browser at http://localhost:5420 (saves to browser storage)
 pnpm check      # type-check, unit tests, production build
 cargo test --manifest-path src-tauri/Cargo.toml   # save/load safety tests
 pnpm package    # build Mythra Board.app (and a .dmg)

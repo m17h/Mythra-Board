@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: {
-    port: 1420,
+    port: 5420,
     strictPort: true,
     // The native side is built by Cargo; watching its output only causes needless reloads.
     watch: { ignored: ["**/src-tauri/**"] },
