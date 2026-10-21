@@ -59,6 +59,10 @@ export type ItemData = {
   ends?: [number, number, number, number];
   /** For free arrows: which ends get arrowheads. */
   arrowHead?: LinkArrow;
+  /** Locked items can't be moved, resized, edited or deleted until unlocked. */
+  locked?: boolean;
+  /** Items sharing a group id are selected and moved together. */
+  group?: string;
 };
 
 export type BoardNode = Node<ItemData, ItemType>;
@@ -109,3 +113,6 @@ export const DEFAULT_OUTLINE: Record<ItemType, OutlineWidth> = {
 /** Text items made before text styles existed used the S/M/L size instead. */
 export const textStyleOf = (d: ItemData): TextStyle =>
   d.textStyle ?? (d.size === "l" ? "title" : d.size === "s" ? "body" : "subheading");
+
+export const ARRANGE_MODES = ["left", "hcenter", "right", "top", "vmiddle", "bottom", "distributeX", "distributeY"] as const;
+export type ArrangeMode = (typeof ARRANGE_MODES)[number];

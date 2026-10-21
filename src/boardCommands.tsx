@@ -2,7 +2,10 @@ import { useReactFlow } from "@xyflow/react";
 import { useMemo } from "react";
 import type { Command } from "./components/CommandPalette";
 import {
+  ArrangeGlyph,
   ArrowToolIcon,
+  GroupIcon,
+  LockIcon,
   BackIcon,
   BoardLinkIcon,
   BoardsIcon,
@@ -30,7 +33,7 @@ import { boardIndex } from "./navigation";
 import { ShapeGlyph, SHAPE_NAMES } from "./shapes";
 import { boardStore } from "./store";
 import { setThemeSetting } from "./theme";
-import { BACKGROUNDS, SHAPES, type BoardNode, type LinkEdge } from "./types";
+import { BACKGROUNDS, SHAPES, type ArrangeMode, type BoardNode, type LinkEdge } from "./types";
 
 export type BoardActions = {
   openFind: () => void;
@@ -122,6 +125,23 @@ export function useBoardCommands(actions: BoardActions, open: boolean): Command[
       add("Edit", { label: "Send to back", keys: "⇧⌘[", run: () => s.reorder(ids, "back") });
       add("Edit", { label: "Put in a section", keys: "⌥⌘G", run: () => void s.frameSelection() });
       add("Edit", { label: "Delete", keys: "⌫", run: () => s.deleteNodes(ids) });
+      const locked = selected.every((n) => n.data.locked);
+      add("Arrange", { label: locked ? "Unlock" : "Lock", keys: "⇧⌘L", icon: <LockIcon open={locked} />, run: () => s.setLocked(ids, !locked) });
+      if (ids.length > 1) {
+        add("Arrange", { label: "Group", keys: "⌘G", icon: <GroupIcon />, run: () => s.group(ids) });
+        const modes: [ArrangeMode, string, string][] = [
+          ["left", "Align left edges", "⌥A"],
+          ["hcenter", "Align centres", "⌥H"],
+          ["right", "Align right edges", "⌥D"],
+          ["top", "Align top edges", "⌥W"],
+          ["vmiddle", "Align middles", "⌥V"],
+          ["bottom", "Align bottom edges", "⌥S"],
+          ["distributeX", "Space evenly across", "⌃⌥H"],
+          ["distributeY", "Space evenly down", "⌃⌥V"],
+        ];
+        for (const [m, label, keys] of modes) add("Arrange", { label, keys, icon: <ArrangeGlyph mode={m} />, run: () => s.arrange(ids, m) });
+      }
+      if (selected.some((n) => n.data.group)) add("Arrange", { label: "Ungroup", keys: "⇧⌘G", icon: <GroupIcon />, run: () => s.ungroup(ids) });
     }
 
     add("View", { label: "Find on this board", keys: "⌘F", icon: <SearchIcon />, run: actions.openFind });

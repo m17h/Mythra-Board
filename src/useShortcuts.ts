@@ -2,7 +2,7 @@ import { Position, useReactFlow } from "@xyflow/react";
 import { useEffect, useRef, type RefObject } from "react";
 import { addImages, asUrl, isImageFile } from "./images";
 import { boardStore, type Clip, type Tool } from "./store";
-import { DEFAULT_NOTE_WIDTH } from "./types";
+import { DEFAULT_NOTE_WIDTH, type ArrangeMode } from "./types";
 
 const isTyping = (el: EventTarget | null) =>
   el instanceof HTMLElement && (el.isContentEditable || el.tagName === "INPUT" || el.tagName === "TEXTAREA");
@@ -80,12 +80,25 @@ export function useShortcuts(options: Options) {
       const links = s.edges.filter((x) => x.selected);
       const handled = () => e.preventDefault();
 
+      if (e.altKey && !e.metaKey && !(e.ctrlKey && e.code === "KeyG")) {
+        // Option-key alignment, as in most design apps.
+        const ids = selected.map((n) => n.id);
+        const modes: Record<string, ArrangeMode> = e.ctrlKey
+          ? { KeyH: "distributeX", KeyV: "distributeY" }
+          : { KeyA: "left", KeyH: "hcenter", KeyD: "right", KeyW: "top", KeyV: "vmiddle", KeyS: "bottom" };
+        if (ids.length > 1 && modes[e.code]) (s.arrange(ids, modes[e.code]), handled());
+        return;
+      }
+
       if (mod) {
         if (lower === "z") (e.shiftKey ? s.redo() : s.undo(), handled());
         else if (lower === "y") (s.redo(), handled());
         else if (lower === "a") (s.selectAll(), handled());
         else if (lower === "d") (s.duplicateSelection(), handled());
         else if (e.altKey && e.code === "KeyG") (s.frameSelection(), handled());
+        else if (e.code === "KeyG" && e.shiftKey) (s.ungroup(selected.map((n) => n.id)), handled());
+        else if (e.code === "KeyG") (s.group(selected.map((n) => n.id)), handled());
+        else if (e.shiftKey && e.code === "KeyL") (s.setLocked(selected.map((n) => n.id), !selected.every((n) => n.data.locked)), handled());
         else if (e.shiftKey && e.code === "KeyE") (opts.current.exportPng(), handled());
         else if (e.shiftKey && e.code === "BracketRight") (s.reorder(selected.map((n) => n.id), "front"), handled());
         else if (e.shiftKey && e.code === "BracketLeft") (s.reorder(selected.map((n) => n.id), "back"), handled());

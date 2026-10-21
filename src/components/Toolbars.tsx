@@ -16,6 +16,7 @@ import {
   TEXT_STYLES,
   textStyleOf,
   type Align,
+  type ArrangeMode,
   type Color,
   type ItemData,
   type ItemType,
@@ -33,7 +34,11 @@ import {
   AlignRightIcon,
   ArrowBothIcon,
   CardTitleIcon,
+  AlignItemsIcon,
+  ArrangeGlyph,
   ChevronIcon,
+  GroupIcon,
+  LockIcon,
   MoreIcon,
   OutlineIcon,
   ArrowEndIcon,
@@ -132,7 +137,45 @@ export function SizeButtons({ value, onPick }: { value: Size | null; onPick: (s:
 
 const only = <T,>(values: T[]): T | null => (values.length && values.every((v) => v === values[0]) ? values[0] : null);
 
-type Panel = "color" | "outline" | "text" | "shape";
+type Panel = "color" | "outline" | "text" | "shape" | "arrange";
+
+const ARRANGE_NAMES: Record<ArrangeMode, string> = {
+  left: "Align left edges (⌥A)",
+  hcenter: "Align centres (⌥H)",
+  right: "Align right edges (⌥D)",
+  top: "Align top edges (⌥W)",
+  vmiddle: "Align middles (⌥V)",
+  bottom: "Align bottom edges (⌥S)",
+  distributeX: "Space evenly across (⌃⌥H)",
+  distributeY: "Space evenly down (⌃⌥V)",
+};
+
+function ArrangePanel({ ids, grouped }: { ids: string[]; grouped: boolean }) {
+  const store = boardStore.getState();
+  return (
+    <>
+      <Row label="Align">
+        {(["left", "hcenter", "right", "top", "vmiddle", "bottom"] as const).map((m) => (
+          <ToolButton key={m} label={ARRANGE_NAMES[m]} onClick={() => store.arrange(ids, m)}>
+            <ArrangeGlyph mode={m} />
+          </ToolButton>
+        ))}
+      </Row>
+      <Row label="Space evenly">
+        {(["distributeX", "distributeY"] as const).map((m) => (
+          <ToolButton key={m} label={ARRANGE_NAMES[m]} onClick={() => store.arrange(ids, m)}>
+            <ArrangeGlyph mode={m} />
+          </ToolButton>
+        ))}
+      </Row>
+      <Row label="Group">
+        <button type="button" className="popover__action" onClick={() => (grouped ? store.ungroup(ids) : store.group(ids))}>
+          <GroupIcon /> {grouped ? "Ungroup (⇧⌘G)" : "Group (⌘G)"}
+        </button>
+      </Row>
+    </>
+  );
+}
 
 /** A grid of every shape kind; picking one changes the selected shapes. */
 export function ShapePicker({ value, onPick }: { value: ShapeKind | null; onPick: (k: ShapeKind) => void }) {
@@ -469,6 +512,7 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
   const toggle = (p: Panel) => setOpen((o) => (o === p ? null : p));
   const fill = only(colored.map((i) => i.data.color));
   const strongFill = colored.every((i) => STROKED.has(i.type));
+  const locked = items.every((i) => i.data.locked);
 
   return (
     <NodeToolbar nodeId={ids} isVisible={!hidden} position={Position.Top} offset={items.some((i) => i.type === "frame") ? 48 : 14}>
@@ -502,6 +546,16 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
             <span className="bar-divider" />
           </>
         )}
+        {items.length > 1 && (
+          <PanelButton
+            label="Arrange"
+            open={open === "arrange"}
+            onToggle={() => toggle("arrange")}
+            panel={<ArrangePanel ids={ids} grouped={items.every((i) => i.data.group && i.data.group === items[0].data.group)} />}
+          >
+            <AlignItemsIcon />
+          </PanelButton>
+        )}
         {single?.type === "note" && (
           <ToolButton
             label={single.data.title === undefined ? "Add a card title" : "Remove the card title"}
@@ -516,6 +570,13 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
             <LinkedNoteIcon />
           </ToolButton>
         )}
+        <ToolButton
+          label={locked ? "Unlock (⇧⌘L)" : "Lock (⇧⌘L)"}
+          active={locked}
+          onClick={() => store.setLocked(ids, !locked)}
+        >
+          <LockIcon open={!locked} />
+        </ToolButton>
         <button
           type="button"
           className="tool-btn"
@@ -529,9 +590,11 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
         >
           <MoreIcon />
         </button>
-        <ToolButton label="Delete (⌫)" danger onClick={() => store.deleteNodes(ids)}>
-          <TrashIcon />
-        </ToolButton>
+        {!locked && (
+          <ToolButton label="Delete (⌫)" danger onClick={() => store.deleteNodes(ids)}>
+            <TrashIcon />
+          </ToolButton>
+        )}
       </div>
     </NodeToolbar>
   );

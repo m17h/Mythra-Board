@@ -48,6 +48,8 @@ type SavedItem = {
   collapsed?: boolean;
   ends?: number[];
   arrowHead?: string;
+  locked?: boolean;
+  group?: string;
 };
 type SavedLink = { id: string; from: string; to: string; label: string; curve: string; arrow: string; dash: string };
 type SavedBoard = {
@@ -115,6 +117,8 @@ export function toSaved(doc: BoardDoc): SavedBoard {
       if (n.data.collapsed) item.collapsed = true;
       if (n.data.ends) item.ends = n.data.ends;
       if (n.data.arrowHead) item.arrowHead = n.data.arrowHead;
+      if (n.data.locked) item.locked = true;
+      if (n.data.group) item.group = n.data.group;
       return item;
     }),
     links: doc.edges.map(cleanEdge).map((e) => ({
@@ -176,6 +180,8 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (it.outlineStyle) node.data.outlineStyle = oneOf(it.outlineStyle, OUTLINE_STYLES, "solid");
     if (type === "board") node.data.boardId = str(it.boardId);
     if (it.collapsed === true) node.data.collapsed = true;
+    if (it.locked === true) node.data.locked = true;
+    if (str(it.group)) node.data.group = str(it.group);
     if (type === "arrow") {
       node.data.ends = it.ends as [number, number, number, number];
       node.data.arrowHead = oneOf(it.arrowHead, ["none", "end", "both"] as const, "end");

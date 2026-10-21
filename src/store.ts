@@ -8,13 +8,14 @@ import {
 } from "@xyflow/react";
 import { nanoid } from "nanoid";
 import { createStore, useStore } from "zustand";
-import { center, containsPoint, rectsBounds, type Point } from "./geometry";
+import { center, containsPoint, rectsBounds, type Point, type Rect } from "./geometry";
 import { decorate, defaultSize, freeSpot, itemsInFrame, rectOf } from "./layout";
 import { hiddenItems, tidyTree, treeRoots } from "./mindmap";
 import { snapMove, type Guide } from "./snap";
 import {
   AUTO_HEIGHT,
   LINKABLE,
+  type ArrangeMode,
   type BoardBackground,
   type BoardNode,
   type Color,
@@ -75,6 +76,39 @@ const readSnapping = () => {
 const PASTE_OFFSET = 32;
 /** Room around a free arrow so its ends and arrowheads aren't clipped. */
 const ARROW_PAD = 16;
+
+/** Where each item goes to line up (or spread out evenly) inside `bounds`. */
+export function arrangePositions(
+  items: (Rect & { id: string })[],
+  bounds: Rect,
+  mode: ArrangeMode,
+): Map<string, Point> {
+  const out = new Map<string, Point>();
+  if (mode === "distributeX" || mode === "distributeY") {
+    const horizontal = mode === "distributeX";
+    const sorted = [...items].sort((a, b) => (horizontal ? a.x - b.x : a.y - b.y));
+    const used = sorted.reduce((sum, r) => sum + (horizontal ? r.width : r.height), 0);
+    const span = horizontal ? bounds.width : bounds.height;
+    const gap = (span - used) / Math.max(1, sorted.length - 1);
+    let at = horizontal ? bounds.x : bounds.y;
+    for (const r of sorted) {
+      out.set(r.id, horizontal ? { x: round(at), y: r.y } : { x: r.x, y: round(at) });
+      at += (horizontal ? r.width : r.height) + gap;
+    }
+    return out;
+  }
+  for (const r of items) {
+    const p = { x: r.x, y: r.y };
+    if (mode === "left") p.x = bounds.x;
+    if (mode === "right") p.x = bounds.x + bounds.width - r.width;
+    if (mode === "hcenter") p.x = bounds.x + (bounds.width - r.width) / 2;
+    if (mode === "top") p.y = bounds.y;
+    if (mode === "bottom") p.y = bounds.y + bounds.height - r.height;
+    if (mode === "vmiddle") p.y = bounds.y + (bounds.height - r.height) / 2;
+    out.set(r.id, { x: round(p.x), y: round(p.y) });
+  }
+  return out;
+}
 
 /** The item box for a free arrow from `a` to `b`, with its ends relative to that box. */
 export function arrowBox(a: Point, b: Point) {
@@ -187,6 +221,12 @@ export type BoardState = {
   eraseNodes: (ids: string[]) => void;
   nudgeSelection: (dx: number, dy: number) => void;
   reorder: (ids: string[], to: "front" | "back") => void;
+  /** Lock (or unlock) items against moving, resizing, editing and deleting. */
+  setLocked: (ids: string[], locked: boolean) => void;
+  group: (ids: string[]) => void;
+  ungroup: (ids: string[]) => void;
+  /** Line items up along an edge or centre, or space them evenly. */
+  arrange: (ids: string[], mode: ArrangeMode) => void;
   setSnapping: (on: boolean) => void;
   copySelection: () => Clip | null;
   paste: (clip: Clip, at?: Point) => void;
@@ -211,6 +251,8 @@ function cleanData(d: ItemData): ItemData {
   if (d.collapsed) out.collapsed = true;
   if (d.ends) out.ends = d.ends.map(round) as ItemData["ends"];
   if (d.arrowHead) out.arrowHead = d.arrowHead;
+  if (d.locked) out.locked = true;
+  if (d.group) out.group = d.group;
   return out;
 }
 
@@ -430,6 +472,18 @@ export function createBoardStore() {
             }
           }
           if (extra.length) all = [...changes, ...extra];
+        }
+        // Selecting one member of a group selects the whole group.
+        const picked = all.filter((c) => c.type === "select" && c.selected).map((c) => (c as { id: string }).id);
+        if (picked.length) {
+          const groups = new Set(get().nodes.filter((n) => picked.includes(n.id) && n.data.group).map((n) => n.data.group));
+          if (groups.size) {
+            const already = new Set(picked);
+            const mates = get()
+              .nodes.filter((n) => n.data.group && groups.has(n.data.group) && !already.has(n.id) && !n.selected)
+              .map((n): NodeChange<BoardNode> => ({ type: "select", id: n.id, selected: true }));
+            if (mates.length) all = [...all, ...mates];
+          }
         }
         set((s) => ({
           nodes: applyNodeChanges(all, s.nodes),
@@ -700,7 +754,8 @@ export function createBoardStore() {
           return;
         }
         get().stopEditing();
-        if (!get().nodes.some((n) => n.id === id)) return;
+        const item = get().nodes.find((n) => n.id === id);
+        if (!item || item.data.locked) return;
         get().begin();
         set({ editingId: id, editingField: field, editingLabelId: null });
       },
@@ -780,7 +835,7 @@ export function createBoardStore() {
 
       deleteSelection: () => {
         const { nodes, edges } = get();
-        const ids = nodes.filter((n) => n.selected).map((n) => n.id);
+        const ids = nodes.filter((n) => n.selected && !n.data.locked).map((n) => n.id);
         const edgeIds = new Set(edges.filter((e) => e.selected).map((e) => e.id));
         if (!ids.length && !edgeIds.size) return;
         const idSet = new Set(ids);
@@ -794,8 +849,9 @@ export function createBoardStore() {
       },
 
       deleteNodes: (ids) => {
-        if (!ids.length) return;
-        const idSet = new Set(ids);
+        const locked = new Set(get().nodes.filter((n) => n.data.locked).map((n) => n.id));
+        const idSet = new Set(ids.filter((id) => !locked.has(id)));
+        if (!idSet.size) return;
         get().stopEditing();
         record(() =>
           set((s) => ({
@@ -825,6 +881,55 @@ export function createBoardStore() {
         );
       },
 
+      setLocked: (ids, locked) => {
+        const idSet = new Set(ids);
+        if (locked && idSet.has(get().editingId ?? "")) get().stopEditing();
+        record(() =>
+          set((s) => ({
+            nodes: s.nodes.map((n) => {
+              if (!idSet.has(n.id)) return n;
+              const data = { ...n.data };
+              if (locked) data.locked = true;
+              else delete data.locked;
+              return { ...n, draggable: !locked, data };
+            }),
+          })),
+        );
+      },
+
+      group: (ids) => {
+        if (ids.length < 2) return;
+        const g = nanoid(8);
+        get().styleItems(ids, { group: g });
+      },
+
+      ungroup: (ids) => {
+        const groups = new Set(get().nodes.filter((n) => ids.includes(n.id) && n.data.group).map((n) => n.data.group));
+        if (!groups.size) return;
+        record(() =>
+          set((s) => ({
+            nodes: s.nodes.map((n) => {
+              if (!n.data.group || !groups.has(n.data.group)) return n;
+              const data = { ...n.data };
+              delete data.group;
+              return { ...n, data };
+            }),
+          })),
+        );
+      },
+
+      arrange: (ids, mode) => {
+        const idSet = new Set(ids);
+        const items = get().nodes.filter((n) => idSet.has(n.id) && !n.data.locked);
+        const all = get().nodes.filter((n) => idSet.has(n.id));
+        const bounds = rectsBounds(all.map(rectOf));
+        if (items.length < 2 || !bounds) return;
+        const moves = arrangePositions(items.map((n) => ({ id: n.id, ...rectOf(n) })), bounds, mode);
+        record(() =>
+          set((s) => ({ nodes: s.nodes.map((n) => (moves.has(n.id) ? { ...n, position: moves.get(n.id)! } : n)) })),
+        );
+      },
+
       setSnapping: (snapping) => {
         set({ snapping });
         if (typeof window === "undefined") return;
@@ -840,7 +945,7 @@ export function createBoardStore() {
         record(() =>
           set((s) => ({
             nodes: s.nodes.map((n) =>
-              n.selected ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n,
+              n.selected && !n.data.locked ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n,
             ),
           })),
         );
@@ -867,10 +972,16 @@ export function createBoardStore() {
         const dx = at ? at.x - minX : PASTE_OFFSET;
         const dy = at ? at.y - minY : PASTE_OFFSET;
         const idMap = new Map<string, string>();
+        // Copies of a group form a new group of their own.
+        const groupMap = new Map<string, string>();
         const nodes = clip.nodes.map((n) => {
           const id = nanoid(10);
           idMap.set(n.id, id);
-          return decorate({ ...cleanNode(n), id, selected: true, position: { x: n.position.x + dx, y: n.position.y + dy } });
+          const clean = cleanNode(n);
+          const g = clean.data.group;
+          if (g && !groupMap.has(g)) groupMap.set(g, nanoid(8));
+          if (g) clean.data = { ...clean.data, group: groupMap.get(g) };
+          return decorate({ ...clean, id, selected: true, position: { x: n.position.x + dx, y: n.position.y + dy } });
         });
         const links = clip.links
           .filter((e) => idMap.has(e.source) && idMap.has(e.target))

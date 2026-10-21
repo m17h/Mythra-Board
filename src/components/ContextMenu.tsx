@@ -82,12 +82,20 @@ export function ContextMenu({
       { label: "Duplicate", keys: "⌘D", run: () => s.duplicateSelection() },
       { label: "Copy", keys: "⌘C", run: () => document.execCommand("copy") },
       "divider",
+      ...(selected.every((n) => n.data.locked)
+        ? [{ label: "Unlock", keys: "⇧⌘L", run: () => s.setLocked(ids, false) }]
+        : [{ label: "Lock", keys: "⇧⌘L", run: () => s.setLocked(ids, true) }]),
+      ...(selected.some((n) => n.data.group)
+        ? [{ label: "Ungroup", keys: "⇧⌘G", run: () => s.ungroup(ids) }]
+        : selected.length > 1
+          ? [{ label: "Group", keys: "⌘G", run: () => s.group(ids) }]
+          : []),
       { label: "Bring to front", keys: "⇧⌘]", run: () => s.reorder(ids, "front") },
       { label: "Send to back", keys: "⇧⌘[", run: () => s.reorder(ids, "back") },
       ...(single?.type === "frame" ? [] : [{ label: "Put in a section", keys: "⌥⌘G", run: () => void s.frameSelection() }]),
       { label: "Zoom to fit", keys: "⇧2", run: () => void rf.fitView({ nodes: ids.map((id) => ({ id })), padding: 0.3, maxZoom: 1.5, duration: 250 }) },
       "divider",
-      { label: "Delete", keys: "⌫", danger: true, run: () => s.deleteNodes(ids) },
+      ...(selected.every((n) => n.data.locked) ? [] : [{ label: "Delete", keys: "⌫", danger: true, run: () => s.deleteNodes(ids) }]),
     ];
   } else if (target.kind === "link") {
     const link = s.edges.find((e) => e.selected);

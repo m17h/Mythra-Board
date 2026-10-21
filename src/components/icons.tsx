@@ -378,3 +378,19 @@ export const SettingsIcon = () => (
     <path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" />
   </Icon>
 );
+
+const ARRANGE_PATHS: Record<string, string> = {
+  left: "M4 3v18M7 7h11M7 7v3h11V7M7 14h7M7 14v3h7v-3",
+  hcenter: "M12 3v18M6 7h12v3H6zM8.5 14h7v3h-7z",
+  right: "M20 3v18M6 7h11v3H6zM10 14h7v3h-7z",
+  top: "M3 4h18M7 7v11h3V7zM14 7v7h3V7z",
+  vmiddle: "M3 12h18M7 6v12h3V6zM14 8.5v7h3v-7z",
+  bottom: "M3 20h18M7 6v11h3V6zM14 10v7h3v-7z",
+  distributeX: "M3 4v16M21 4v16M8 8h3v8H8zM13 8h3v8h-3z",
+  distributeY: "M4 3h16M4 21h16M8 8h8v3H8zM8 13h8v3H8z",
+};
+export const ArrangeGlyph = ({ mode }: { mode: string }) => (
+  <Icon strokeWidth={1.6}>
+    <path d={ARRANGE_PATHS[mode]} />
+  </Icon>
+);

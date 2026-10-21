@@ -59,6 +59,7 @@ export const rectOf = (n: BoardNode): Rect => ({
 export function decorate(n: BoardNode): BoardNode {
   const out: BoardNode = { ...n };
   if (n.type === "frame") out.zIndex = -1;
+  out.draggable = !n.data.locked;
   if (AUTO_HEIGHT.has(n.type)) {
     out.initialHeight = n.initialHeight ?? n.height ?? NEW_NOTE_HEIGHT;
     delete out.height;

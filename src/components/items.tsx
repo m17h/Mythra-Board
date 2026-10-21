@@ -41,6 +41,7 @@ function look(type: ItemType, data: ItemData): { className: string; style: CSSPr
       data.outline !== undefined && "outline-set",
       data.outlineStyle === "dashed" && "is-dashed-outline",
       data.align && `align--${data.align}`,
+      data.locked && "is-locked",
     ),
     style,
   };
@@ -219,7 +220,7 @@ export const InkItem = memo(function InkItem({ data, selected, width, height }: 
   const path = useMemo(() => strokePath(data.points ?? [], data.size), [data.points, data.size]);
   const erasing = useBoard((s) => s.tool === "eraser");
   return (
-    <svg className={cls("ink", `color--${data.color}`, selected && "is-selected", erasing && "is-erasable")} width={width} height={height}>
+    <svg className={cls("ink", `color--${data.color}`, selected && "is-selected", erasing && "is-erasable", data.locked && "is-locked")} width={width} height={height}>
       <path d={path} />
     </svg>
   );
@@ -353,7 +354,7 @@ export const ArrowItem = memo(function ArrowItem({ id, data, selected, width, he
 
   return (
     <svg
-      className={cls("free-arrow", `color--${data.color}`, data.outlineStyle === "dashed" && "is-dashed", selected && "is-selected")}
+      className={cls("free-arrow", `color--${data.color}`, data.outlineStyle === "dashed" && "is-dashed", selected && "is-selected", data.locked && "is-locked")}
       width={width}
       height={height}
     >
@@ -361,7 +362,7 @@ export const ArrowItem = memo(function ArrowItem({ id, data, selected, width, he
       <path className="free-arrow__line" d={line} style={{ strokeWidth: stroke }} />
       {head !== "none" && <path className="free-arrow__head" d={arrowHead({ x: x2, y: y2 }, dir, length, length * 0.85)} />}
       {head === "both" && <path className="free-arrow__head" d={arrowHead({ x: x1, y: y1 }, back, length, length * 0.85)} />}
-      {selected && (
+      {selected && !data.locked && (
         <>
           <circle className="free-arrow__handle nodrag" cx={x1} cy={y1} r={6} onPointerDown={dragEnd(0)} />
           <circle className="free-arrow__handle nodrag" cx={x2} cy={y2} r={6} onPointerDown={dragEnd(1)} />
