@@ -1,6 +1,6 @@
 [package]
 name = "mythra-board"
-version = "0.1.0"
+version = "0.2.0"
 description = "A fast, simple board for connecting ideas"
 edition = "2021"
 
