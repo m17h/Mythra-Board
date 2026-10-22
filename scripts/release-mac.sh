@@ -9,7 +9,7 @@
 #
 # Automatic updates: if the update-signing key is at ~/.tauri/mythra-board.key (or
 # TAURI_SIGNING_PRIVATE_KEY is set), it also makes the update files and a latest.json.
-# Upload all three to a GitHub release on github.com/m17h/mythra-board tagged v<version>.
+# Upload all three to a GitHub release on github.com/m17h/Mythra-Board tagged v<version>.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -51,7 +51,7 @@ if [ -f "$BUNDLE/Mythra Board.app.tar.gz.sig" ]; then
   VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1)"
   case "$(uname -m)" in arm64) ARCH=aarch64 ;; *) ARCH=x86_64 ;; esac
   # GitHub swaps spaces in uploaded file names for dots.
-  URL="https://github.com/m17h/mythra-board/releases/download/v$VERSION/Mythra.Board.app.tar.gz"
+  URL="https://github.com/m17h/Mythra-Board/releases/download/v$VERSION/Mythra.Board.app.tar.gz"
   SIG="$(cat "$BUNDLE/Mythra Board.app.tar.gz.sig")"
   cat > "$BUNDLE/latest.json" <<JSON
 {

@@ -46,7 +46,7 @@ scripts/release-mac.sh   # signed .app + .dmg (notarised when APPLE_ID / APPLE_P
 
 ### Releasing updates
 
-The app checks `https://github.com/m17h/mythra-board/releases/latest/download/latest.json` for new versions.
+The app checks `https://github.com/m17h/Mythra-Board/releases/latest/download/latest.json` for new versions.
 Updates are signed with the private key at `~/.tauri/mythra-board.key` (keep a backup somewhere safe: without it,
 existing copies of the app can't be updated). Its public half is in `src-tauri/tauri.conf.json`.
 

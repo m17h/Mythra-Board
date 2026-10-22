@@ -43,7 +43,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFDQUI3NkU1RTc2RkQzOTEKUldTUjAyL241WGFySEtHY2FaTTI1djdtdzVNV3J2c296L015clhheDZrM2Q5TDlIVmw5TjdMWkMK",
       "endpoints": [
-        "https://github.com/m17h/mythra-board/releases/latest/download/latest.json"
+        "https://github.com/m17h/Mythra-Board/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"
