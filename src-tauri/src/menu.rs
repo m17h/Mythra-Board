@@ -70,6 +70,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .separator()
         .item(&item(app, "find", "Find on Board…", Some("CmdOrCtrl+F"))?)
         .item(&item(app, "palette", "Command Palette…", Some("CmdOrCtrl+K"))?)
+        .item(&item(app, "ask-claude", "Ask Claude…", Some("CmdOrCtrl+J"))?)
         .build()?;
 
     let appearance = submenu(

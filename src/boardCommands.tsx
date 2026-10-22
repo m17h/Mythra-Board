@@ -30,8 +30,8 @@ import {
   SettingsIcon,
   SparkleIcon,
 } from "./components/icons";
-import { aiActions, aiSupported } from "./ai";
-import { runAi } from "./notify";
+import { aiSupported } from "./ai";
+import { askClaude, QUICK } from "./assistant/ask";
 import { childrenOf } from "./mindmap";
 import { boardIndex } from "./navigation";
 import { ShapeGlyph, SHAPE_NAMES } from "./shapes";
@@ -165,11 +165,13 @@ export function useBoardCommands(actions: BoardActions, open: boolean): Command[
     });
     cmds.push(...(actions.extra ?? []));
     if (aiSupported()) {
+      add("AI", { label: "Ask Claude…", keys: "⌘J", icon: <SparkleIcon />, keywords: "claude ai assistant build make create help", run: () => void askClaude() });
       if (single && ["note", "text", "shape"].includes(single.type)) {
-        add("AI", { label: "Brainstorm ideas from this", icon: <SparkleIcon />, keywords: "claude ai suggest", run: () => void runAi(() => aiActions.brainstorm(single.id)) });
-        add("AI", { label: "Turn this into a mind map", icon: <SparkleIcon />, keywords: "claude ai", run: () => void runAi(() => aiActions.mindMap(single.id)) });
+        add("AI", { label: "Brainstorm ideas from this", icon: <SparkleIcon />, keywords: "claude ai suggest", run: () => void askClaude(QUICK.brainstorm, [single.id]) });
+        add("AI", { label: "Turn this into a mind map", icon: <SparkleIcon />, keywords: "claude ai", run: () => void askClaude(QUICK.mindMap, [single.id]) });
       }
-      add("AI", { label: "Summarise this board", icon: <SparkleIcon />, keywords: "claude ai summary", run: () => void runAi(aiActions.summarise) });
+      add("AI", { label: "Summarise this board", icon: <SparkleIcon />, keywords: "claude ai summary", run: () => void askClaude(QUICK.summarise) });
+      add("AI", { label: "Organise this board", icon: <SparkleIcon />, keywords: "claude ai tidy clean up sort group sections", run: () => void askClaude(QUICK.organise) });
     }
     add("App", { label: "Settings…", icon: <SettingsIcon />, keywords: "preferences icloud sync storage ai key", run: actions.openSettings });
 

@@ -1,9 +1,9 @@
 import { Position, useReactFlow } from "@xyflow/react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Point } from "../geometry";
-import { aiActions, aiSupported } from "../ai";
+import { aiSupported } from "../ai";
+import { askClaude, QUICK } from "../assistant/ask";
 import { childrenOf } from "../mindmap";
-import { runAi } from "../notify";
 import { keyLabel } from "../platform";
 import { boardStore } from "../store";
 import { DEFAULT_NOTE_WIDTH, EDITABLE, LINKABLE } from "../types";
@@ -84,8 +84,8 @@ export function ContextMenu({
         : []),
       ...(single && aiSupported() && ["note", "text", "shape"].includes(single.type)
         ? [
-            { label: "✨ Brainstorm ideas", run: () => void runAi(() => aiActions.brainstorm(single.id)) },
-            { label: "✨ Turn into a mind map", run: () => void runAi(() => aiActions.mindMap(single.id)) },
+            { label: "✨ Brainstorm ideas", run: () => void askClaude(QUICK.brainstorm, [single.id]) },
+            { label: "✨ Turn into a mind map", run: () => void askClaude(QUICK.mindMap, [single.id]) },
           ]
         : []),
       { label: "Duplicate", keys: "⌘D", run: () => s.duplicateSelection() },

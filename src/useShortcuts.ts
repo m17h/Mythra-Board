@@ -1,3 +1,4 @@
+import { chat } from "./assistant/run";
 import { Position, useReactFlow } from "@xyflow/react";
 import { useEffect, useRef, type RefObject } from "react";
 import { addFiles, asUrl, isAttachable } from "./images";
@@ -85,6 +86,12 @@ export function useShortcuts(options: Options) {
         e.preventDefault();
         markKeyHandled();
         opts.current.goHome();
+        return;
+      }
+      if (mod && !e.shiftKey && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        markKeyHandled();
+        chat.setState((c) => ({ open: !c.open }));
         return;
       }
       if (mod && !e.shiftKey && e.key.toLowerCase() === "k") {

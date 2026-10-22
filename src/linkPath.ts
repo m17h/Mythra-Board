@@ -26,11 +26,12 @@ const ARROW_LENGTH = 11;
 const END_SPACING = 22;
 
 export type LinkGeometry = { path: string; heads: string[]; labelX: number; labelY: number };
-export type LinkEnds = [Anchor, Anchor];
+/** Where a link attaches at each end, and for elbow links where along the way it bends (0–1). */
+export type LinkEnds = [Anchor, Anchor] & { step?: number };
 
 const flip = (p: Point): Point => ({ x: -p.x, y: -p.y });
 
-function pathBetween(curve: LinkCurve, from: Anchor, to: Anchor, fromPoint: Point, toPoint: Point): [string, number, number] {
+function pathBetween(curve: LinkCurve, from: Anchor, to: Anchor, fromPoint: Point, toPoint: Point, step = 0.5): [string, number, number] {
   if (curve === "straight") {
     const [path, x, y] = getStraightPath({ sourceX: fromPoint.x, sourceY: fromPoint.y, targetX: toPoint.x, targetY: toPoint.y });
     return [path, x, y];
@@ -44,7 +45,7 @@ function pathBetween(curve: LinkCurve, from: Anchor, to: Anchor, fromPoint: Poin
     targetPosition: to.side,
   };
   if (curve === "elbow") {
-    const [path, x, y] = getSmoothStepPath({ ...args, borderRadius: 10, offset: 18 });
+    const [path, x, y] = getSmoothStepPath({ ...args, borderRadius: 10, offset: 18, stepPosition: step });
     return [path, x, y];
   }
   const [path, x, y] = getBezierPath({ ...args, curvature: 0.3 });
@@ -52,7 +53,8 @@ function pathBetween(curve: LinkCurve, from: Anchor, to: Anchor, fromPoint: Poin
 }
 
 /** The drawn path, arrowheads and label position for a link between two anchors. */
-export function linkGeometry([sa, sb]: LinkEnds, curve: LinkCurve, arrow: LinkArrow): LinkGeometry {
+export function linkGeometry(ends: LinkEnds, curve: LinkCurve, arrow: LinkArrow): LinkGeometry {
+  const [sa, sb] = ends;
   // Direction each arrow points: into the item it touches.
   const intoB = curve === "straight" ? unit(sa, sb) : flip(sideNormal(sb.side));
   const intoA = curve === "straight" ? unit(sb, sa) : flip(sideNormal(sa.side));
@@ -70,7 +72,7 @@ export function linkGeometry([sa, sb]: LinkEnds, curve: LinkCurve, arrow: LinkAr
     heads.push(arrowHead(tip, intoA, ARROW_LENGTH));
     start = offset(tip, intoA, -(ARROW_LENGTH - 2));
   }
-  const [path, labelX, labelY] = pathBetween(curve, sa, sb, start, end);
+  const [path, labelX, labelY] = pathBetween(curve, sa, sb, start, end, ends.step);
   return { path, heads, labelX, labelY };
 }
 
@@ -85,6 +87,12 @@ export function computeLinkEnds(nodes: BoardNode[], edges: LinkEdge[]): Map<stri
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const result = new Map<string, LinkEnds>();
   const slots = new Map<string, EndSlot[]>();
+  const steps = new Map<string, number>();
+  // Steering links around items costs a little time per link, so very big boards skip it.
+  const avoid = nodes.length <= 600;
+  let blockers: { id: string; r: Rect }[] | null = null;
+  const obstacles = () =>
+    (blockers ??= nodes.filter((n) => n.type !== "frame" && n.type !== "ink" && n.type !== "arrow" && !n.hidden).map((n) => ({ id: n.id, r: rectOf(n) })));
 
   for (const e of edges) {
     const a = byId.get(e.source);
@@ -98,7 +106,14 @@ export function computeLinkEnds(nodes: BoardNode[], edges: LinkEdge[]): Map<stri
       result.set(e.id, [borderPoint(ra, center(rb), oa), borderPoint(rb, center(ra), ob)]);
       continue;
     }
-    const [sa, sb] = pickSides(ra, rb);
+    let [sa, sb] = pickSides(ra, rb);
+    if (avoid) {
+      const route = clearRoute(ra, rb, a.id, b.id, sa, sb, obstacles());
+      if (route) {
+        [sa, sb] = route.sides;
+        if (route.step !== 0.5 && e.data?.curve === "elbow") steps.set(e.id, route.step);
+      }
+    }
     const add = (key: string, slot: EndSlot) => {
       const list = slots.get(key);
       if (list) list.push(slot);
@@ -120,11 +135,119 @@ export function computeLinkEnds(nodes: BoardNode[], edges: LinkEdge[]): Map<stri
       const anchor = sidePoint(rect, side, along, outline);
       const ends = result.get(slot.edge) ?? ([anchor, anchor] as LinkEnds);
       ends[slot.end] = anchor;
+      const bend = steps.get(slot.edge);
+      if (bend !== undefined) ends.step = bend;
       result.set(slot.edge, ends);
     });
   }
   return result;
 }
+
+type Segment = [Point, Point];
+
+/** Roughly the path a link takes between two sides, as straight segments. */
+function roughRoute(a: Anchor, b: Anchor, step: number): Segment[] {
+  const ha = isHorizontal(a.side);
+  const hb = isHorizontal(b.side);
+  if (a.side === b.side) {
+    // Out of the same side of both: around the outside of whichever reaches further.
+    const out = sideNormal(a.side);
+    if (ha) {
+      const x = out.x > 0 ? Math.max(a.x, b.x) + 18 : Math.min(a.x, b.x) - 18;
+      return [[a, { x, y: a.y }], [{ x, y: a.y }, { x, y: b.y }], [{ x, y: b.y }, b]];
+    }
+    const y = out.y > 0 ? Math.max(a.y, b.y) + 18 : Math.min(a.y, b.y) - 18;
+    return [[a, { x: a.x, y }], [{ x: a.x, y }, { x: b.x, y }], [{ x: b.x, y }, b]];
+  }
+  if (ha && hb) {
+    const x = a.x + (b.x - a.x) * step;
+    return [[a, { x, y: a.y }], [{ x, y: a.y }, { x, y: b.y }], [{ x, y: b.y }, b]];
+  }
+  if (!ha && !hb) {
+    const y = a.y + (b.y - a.y) * step;
+    return [[a, { x: a.x, y }], [{ x: a.x, y }, { x: b.x, y }], [{ x: b.x, y }, b]];
+  }
+  const corner = ha ? { x: b.x, y: a.y } : { x: a.x, y: b.y };
+  return [[a, corner], [corner, b]];
+}
+
+/** Whether a straight, level or upright segment passes through a rect (with a little margin). */
+function segmentHits([p, q]: Segment, r: Rect): boolean {
+  const m = 4;
+  const x1 = Math.min(p.x, q.x);
+  const x2 = Math.max(p.x, q.x);
+  const y1 = Math.min(p.y, q.y);
+  const y2 = Math.max(p.y, q.y);
+  return x2 > r.x + m && x1 < r.x + r.width - m && y2 > r.y + m && y1 < r.y + r.height - m;
+}
+
+const routeLength = (segments: Segment[]) => segments.reduce((sum, [p, q]) => sum + Math.abs(p.x - q.x) + Math.abs(p.y - q.y), 0);
+
+/**
+ * If the usual route between two items runs through other items, look for one that doesn't:
+ * leaving from a different side, or bending nearer one end. Returns null to keep the usual.
+ */
+function clearRoute(
+  ra: Rect,
+  rb: Rect,
+  aId: string,
+  bId: string,
+  sa: Position,
+  sb: Position,
+  others: { id: string; r: Rect }[],
+): { sides: [Position, Position]; step: number } | null {
+  const ca = center(ra);
+  const cb = center(rb);
+  // Only items near the two ends can be in the way.
+  const box = {
+    x: Math.min(ra.x, rb.x) - 60,
+    y: Math.min(ra.y, rb.y) - 60,
+    width: Math.max(ra.x + ra.width, rb.x + rb.width) - Math.min(ra.x, rb.x) + 120,
+    height: Math.max(ra.y + ra.height, rb.y + rb.height) - Math.min(ra.y, rb.y) + 120,
+  };
+  const near = others.filter((o) => o.id !== aId && o.id !== bId && rectsTouch(o.r, box)).map((o) => o.r);
+  if (!near.length) return null;
+  const hits = (segments: Segment[]) => near.reduce((n, r) => n + (segments.some((seg) => segmentHits(seg, r)) ? 1 : 0), 0);
+  const route = (x: Position, y: Position, step: number) => roughRoute(sidePoint(ra, x), sidePoint(rb, y), step);
+  if (!hits(route(sa, sb, 0.5))) return null;
+
+  const right = cb.x >= ca.x;
+  const below = cb.y >= ca.y;
+  const hA = right ? Position.Right : Position.Left;
+  const hB = right ? Position.Left : Position.Right;
+  const vA = below ? Position.Bottom : Position.Top;
+  const vB = below ? Position.Top : Position.Bottom;
+  const gapX = Math.max(rb.x - (ra.x + ra.width), ra.x - (rb.x + rb.width));
+  const gapY = Math.max(rb.y - (ra.y + ra.height), ra.y - (rb.y + rb.height));
+  const options: [Position, Position][] = [[sa, sb]];
+  if (gapX > 10) options.push([hA, hB]);
+  if (gapY > 10) options.push([vA, vB]);
+  // L-shapes: out of one item's side and into the other's top or bottom (or the reverse).
+  if (cb.x > ra.x + ra.width + 10 || cb.x < ra.x - 10) {
+    if (ca.y < rb.y) options.push([hA, Position.Top]);
+    else if (ca.y > rb.y + rb.height) options.push([hA, Position.Bottom]);
+  }
+  if (cb.y > ra.y + ra.height + 10 || cb.y < ra.y - 10) {
+    if (ca.x < rb.x) options.push([vA, Position.Left]);
+    else if (ca.x > rb.x + rb.width) options.push([vA, Position.Right]);
+  }
+  // Around the outside: out of the same side of both items, like a flowchart's "No" branch.
+  if (gapY > 40) options.push([hA, hA], [hB, hB]);
+  if (gapX > 40) options.push([vA, vA], [vB, vB]);
+  let best: { sides: [Position, Position]; step: number; score: number } | null = null;
+  for (const [x, y] of options) {
+    const sameAxis = isHorizontal(x) === isHorizontal(y) && x !== y;
+    for (const step of sameAxis ? [0.5, 0.2, 0.8] : [0.5]) {
+      const segments = route(x, y, step);
+      const usual = x === sa && y === sb && step === 0.5;
+      const score = hits(segments) * 10000 + routeLength(segments) + (usual ? 0 : x === y ? 90 : 40);
+      if (!best || score < best.score) best = { sides: [x, y], step, score };
+    }
+  }
+  return best && (best.sides[0] !== sa || best.sides[1] !== sb || best.step !== 0.5) ? best : null;
+}
+
+const rectsTouch = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
 const sameAnchor = (p: Anchor, q: Anchor) => p.x === q.x && p.y === q.y && p.side === q.side;
 
@@ -140,7 +263,7 @@ export function linkEnds(nodes: BoardNode[], edges: LinkEdge[]): Map<string, Lin
   if (memo) {
     for (const [id, ends] of next) {
       const prev = memo.ends.get(id);
-      if (prev && sameAnchor(prev[0], ends[0]) && sameAnchor(prev[1], ends[1])) next.set(id, prev);
+      if (prev && sameAnchor(prev[0], ends[0]) && sameAnchor(prev[1], ends[1]) && prev.step === ends.step) next.set(id, prev);
     }
   }
   memo = { nodes, edges, ends: next };

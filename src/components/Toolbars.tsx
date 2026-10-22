@@ -29,8 +29,8 @@ import {
 } from "../types";
 import { useLinkGeometry } from "./LinkLine";
 import { ShapeGlyph, SHAPE_NAMES } from "../shapes";
-import { aiActions, aiSupported } from "../ai";
-import { runAi } from "../notify";
+import { aiSupported } from "../ai";
+import { askClaude, QUICK } from "../assistant/ask";
 import { keyLabel } from "../platform";
 import {
   AlignCenterIcon,
@@ -149,20 +149,23 @@ const only = <T,>(values: T[]): T | null => (values.length && values.every((v) =
 type Panel = "color" | "outline" | "text" | "shape" | "arrange" | "ai";
 
 function AiPanel({ id, close }: { id: string; close: () => void }) {
-  const go = (fn: () => Promise<string>) => {
+  const go = (message: string, focus?: string[]) => {
     close();
-    void runAi(fn);
+    void askClaude(message, focus);
   };
   return (
     <div className="ai-actions">
-      <button type="button" className="popover__action" onClick={() => go(() => aiActions.brainstorm(id))}>
+      <button type="button" className="popover__action" onClick={() => go(QUICK.brainstorm, [id])}>
         <SparkleIcon /> Brainstorm ideas from this
       </button>
-      <button type="button" className="popover__action" onClick={() => go(() => aiActions.mindMap(id))}>
+      <button type="button" className="popover__action" onClick={() => go(QUICK.mindMap, [id])}>
         <TidyIcon /> Turn this into a mind map
       </button>
-      <button type="button" className="popover__action" onClick={() => go(aiActions.summarise)}>
+      <button type="button" className="popover__action" onClick={() => go(QUICK.summarise)}>
         <CardTitleIcon /> Summarise this board
+      </button>
+      <button type="button" className="popover__action" onClick={() => go("")}>
+        <SparkleIcon /> Ask Claude something else…
       </button>
     </div>
   );

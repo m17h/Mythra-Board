@@ -57,15 +57,17 @@ export function sideFacing(from: Rect, to: Point): Position {
 }
 
 /**
- * Choose which sides two items should connect on. When they are further apart
- * horizontally than vertically, link left/right sides; otherwise top/bottom.
+ * Choose which sides two items should connect on. Items side by side link their left and
+ * right sides, items stacked link top and bottom. Items set diagonally apart link from the
+ * side too (as long as there's a clear gap across), which keeps mind-map branches and
+ * flowchart side-branches tidy.
  */
 export function pickSides(a: Rect, b: Rect): [Position, Position] {
   const gapX = Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width));
   const gapY = Math.max(b.y - (a.y + a.height), a.y - (b.y + b.height));
   const ca = center(a);
   const cb = center(b);
-  if (gapX >= gapY) {
+  if (gapX >= gapY || (gapX >= 24 && gapY > 0)) {
     return cb.x >= ca.x ? [Position.Right, Position.Left] : [Position.Left, Position.Right];
   }
   return cb.y >= ca.y ? [Position.Bottom, Position.Top] : [Position.Top, Position.Bottom];

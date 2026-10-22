@@ -1,3 +1,4 @@
+mod agent;
 mod ai;
 mod menu;
 mod storage;
@@ -302,9 +303,10 @@ fn clear_ai_key() -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn ask_ai(model: String, system: String, prompt: String) -> Result<String, String> {
-    ai::ask(&model, &system, &prompt).await
+async fn ai_messages(body: serde_json::Value) -> Result<serde_json::Value, String> {
+    ai::messages(body).await
 }
+
 
 #[tauri::command]
 fn list_versions(store: Store, id: String) -> Result<Vec<u64>, String> {
@@ -339,6 +341,7 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 window.state::<windows::OpenBoards>().forget(window.label());
+                agent::stop_window_runs(window.app_handle(), window.label());
             }
         })
         .setup(|app| {
@@ -353,6 +356,7 @@ pub fn run() {
             let _ = store.cleanup_assets(ASSET_MIN_AGE_MS);
             app.manage(RwLock::new(store));
             app.manage(windows::OpenBoards::default());
+            app.manage(agent::Agent::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -382,7 +386,11 @@ pub fn run() {
             ai_key_status,
             set_ai_key,
             clear_ai_key,
-            ask_ai,
+            ai_messages,
+            agent::claude_status,
+            agent::agent_start,
+            agent::agent_stop,
+            agent::agent_tool_result,
             windows::claim_board,
             windows::start_board,
             windows::boards_open_elsewhere,

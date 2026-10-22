@@ -2333,6 +2333,7 @@ name = "mythra-board"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "getrandom 0.2.17",
  "keyring",
  "reqwest 0.12.28",
  "serde",

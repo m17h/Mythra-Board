@@ -127,7 +127,7 @@ export const NoteItem = memo(function NoteItem({ id, type, data, selected, dragg
       ) : (
         !hasTitle && <div className="item-text is-empty">{isText ? "Text" : "Empty note"}</div>
       )}
-      {!isText && tasks.total > 0 && !editing && (
+      {!isText && tasks.total > 1 && !editing && (
         <div className="task-progress" title={`${tasks.done} of ${tasks.total} done`}>
           <div className="task-progress__track">
             <div className="task-progress__bar" style={{ width: `${(tasks.done / tasks.total) * 100}%` }} />

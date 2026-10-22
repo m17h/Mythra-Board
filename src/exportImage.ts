@@ -41,7 +41,7 @@ function stretchLinkCanvases(viewport: HTMLElement, area: { x: number; y: number
  * Draw the given items (and the links between them) to a canvas, at up to 2× for crisp
  * results. Everything else on the board is left out.
  */
-export async function renderCanvas(nodes: BoardNode[], edges: LinkEdge[], opts: { background: boolean }) {
+export async function renderCanvas(nodes: BoardNode[], edges: LinkEdge[], opts: { background: boolean; maxSide?: number }) {
   const bounds = rectsBounds(nodes.map(rectOf));
   const viewport = document.querySelector<HTMLElement>(".react-flow__viewport");
   if (!bounds || !viewport) throw new Error("Nothing to export");
@@ -49,7 +49,9 @@ export async function renderCanvas(nodes: BoardNode[], edges: LinkEdge[], opts: 
   const keepEdges = new Set(edges.filter((e) => keep.has(e.source) && keep.has(e.target)).map((e) => e.id));
   const width = Math.ceil(bounds.width + PAD * 2);
   const height = Math.ceil(bounds.height + PAD * 2);
-  const scale = Math.max(0.5, Math.min(2, MAX_SIDE / Math.max(width, height)));
+  const scale = opts.maxSide
+    ? Math.min(2, opts.maxSide / Math.max(width, height))
+    : Math.max(0.5, Math.min(2, MAX_SIDE / Math.max(width, height)));
   const background = getComputedStyle(document.body).backgroundColor;
   const render = () =>
     domToCanvas(viewport, {

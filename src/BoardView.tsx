@@ -23,6 +23,9 @@ import { onMenu, typingNow, undoText } from "./menuEvents";
 import { notify, setNotifier } from "./notify";
 import { saveAsTemplate } from "./templates";
 import { canOpenWindows, openWindow } from "./windows";
+import { chat, useChat } from "./assistant/run";
+import { AssistantPanel } from "./components/AssistantPanel";
+import { aiSupported } from "./ai";
 import { isMac, keyLabel } from "./platform";
 import { FindBar } from "./components/FindBar";
 import { FormatToolbar } from "./components/FormatToolbar";
@@ -45,6 +48,7 @@ import { ContextMenu, type MenuTarget } from "./components/ContextMenu";
 import { Dock } from "./components/Dock";
 import {
   BackIcon,
+  SparkleIcon,
   BoardLinkIcon,
   BoardsIcon,
   DuplicateIcon,
@@ -153,6 +157,31 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
     window.addEventListener("mythra:find", onFind);
     return () => window.removeEventListener("mythra:find", onFind);
   }, []);
+
+  // Claude's changes are brought into view as they happen.
+  useEffect(() => {
+    const onShow = (e: Event) => {
+      const ids = (e as CustomEvent<string[]>).detail;
+      const box = document.querySelector(".react-flow")?.getBoundingClientRect();
+      if (!ids.length || !box) return;
+      const bounds = rf.getNodesBounds(ids);
+      // Leave room for the Claude panel, the title bar and the dock.
+      const right = chat.getState().open ? (document.querySelector(".assistant")?.getBoundingClientRect().width ?? 0) + 24 : 0;
+      const area = { x: 40, y: 80, width: box.width - right - 80, height: box.height - 170 };
+      if (area.width < 100 || area.height < 100) return;
+      const zoom = Math.max(0.1, Math.min(1, area.width / Math.max(bounds.width, 1), area.height / Math.max(bounds.height, 1)));
+      void rf.setViewport(
+        {
+          x: area.x + (area.width - bounds.width * zoom) / 2 - bounds.x * zoom,
+          y: area.y + (area.height - bounds.height * zoom) / 2 - bounds.y * zoom,
+          zoom,
+        },
+        { duration: 450 },
+      );
+    };
+    window.addEventListener("mythra:show-items", onShow);
+    return () => window.removeEventListener("mythra:show-items", onShow);
+  }, [rf]);
 
   useEffect(() => {
     void refreshBoardIndex();
@@ -272,6 +301,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           history: () => setHistoryOpen(true),
           find: () => setFindOpen(true),
           palette: () => setPalette(true),
+          "ask-claude": () => chat.setState((c) => ({ open: !c.open })),
           "zoom-in": () => void rf.zoomIn({ duration: 150 }),
           "zoom-out": () => void rf.zoomOut({ duration: 150 }),
           "zoom-reset": () => void rf.zoomTo(1, { duration: 200 }),
@@ -578,6 +608,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       </div>
 
       <div className="dock dock--right">
+        {(aiSupported() || import.meta.env.DEV) && <ClaudeButton />}
         <ToolButton label="Mini map (M)" active={showMap} onClick={() => setShowMap((v) => !v)}>
           <MapIcon />
         </ToolButton>
@@ -587,6 +618,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
       </div>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      <AssistantPanel onOpenSettings={() => setSettingsOpen(true)} />
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {presenting && <Presentation onExit={() => setPresenting(false)} />}
       {exportOpen && <ExportDialog initialFormat={exportOpen} onClose={() => setExportOpen(false)} onNotice={setNotice} />}
@@ -972,6 +1004,18 @@ const SHORTCUTS: [string, string][] = [
   ["C", "Fold or unfold a branch"],
   ["⌘[", "Back to the previous board, or all boards"],
 ];
+
+function ClaudeButton() {
+  const open = useChat((s) => s.open);
+  const running = useChat((s) => s.running);
+  return (
+    <ToolButton label="Claude (⌘J)" active={open} onClick={() => chat.setState((c) => ({ open: !c.open }))}>
+      <span className={running ? "claude-btn is-running" : "claude-btn"}>
+        <SparkleIcon />
+      </span>
+    </ToolButton>
+  );
+}
 
 function HelpPanel({ onClose }: { onClose: () => void }) {
   return (

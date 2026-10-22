@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { AI_MODELS, aiSupported, clearKey, getModel, hasKey, saveKey, setModel, type AiModel } from "../ai";
+import { aiSupported, claudeStatus, clearKey, hasKey, saveKey, type ClaudeStatus } from "../ai";
+import { getEnginePreference, getModel, MODELS, setEnginePreference, setModel, type Engine, type Model } from "../assistant/run";
+import { checkAccess } from "../assistant/ask";
 import { formatBytes } from "../images";
-import { cleanupFiles, isTauri } from "../persistence";
+import { cleanupFiles, isTauri, openExternal } from "../persistence";
 import { autoCheckEnabled, checkForUpdate, installUpdate, setAutoCheck, useUpdateState } from "../updates";
 import { useEscape } from "../useDismiss";
 import { ThemeSwitch } from "./ThemeSwitch";
@@ -23,7 +25,14 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
   const [message, setMessage] = useState<string | null>(null);
   const [keySaved, setKeySaved] = useState<boolean | null>(null);
   const [keyDraft, setKeyDraft] = useState("");
-  const [model, setModelState] = useState<AiModel>(getModel());
+  const [model, setModelState] = useState<Model>(getModel());
+  const [claude, setClaude] = useState<ClaudeStatus | null>(null);
+  const [engine, setEngine] = useState<Engine | null>(getEnginePreference());
+  const recheck = () => {
+    setClaude(null);
+    void claudeStatus().then(setClaude);
+    void checkAccess(true);
+  };
   const [version, setVersion] = useState("");
   const [autoUpdate, setAutoUpdate] = useState(autoCheckEnabled);
   const update = useUpdateState();
@@ -33,6 +42,7 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
     if (!desktop) return;
     void invoke<Location>("storage_location").then(setLocation);
     void hasKey().then(setKeySaved);
+    void claudeStatus().then(setClaude);
     void import("@tauri-apps/api/app").then(({ getVersion }) => getVersion().then(setVersion));
   }, [desktop]);
 
@@ -59,6 +69,7 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
       setKeyDraft("");
       setKeySaved(true);
       setMessage("API key saved in your Keychain.");
+      void checkAccess(true);
     } catch (err) {
       setMessage(String(err));
     }
@@ -141,11 +152,41 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
         </div>
 
         <div className="dialog__section">
-          <div className="popover__label">AI (Claude)</div>
+          <div className="popover__label">Claude</div>
           {!aiSupported() ? (
-            <div className="settings__note">AI features work in the desktop app.</div>
+            <div className="settings__note">Claude works in the desktop app.</div>
           ) : (
             <>
+              <div className="settings__note">Claude can build, organise and restyle your boards. On a board, press {"⌘J"} or click ✨.</div>
+              <div className="settings__claude">
+                <div className="settings__claude-head">
+                  <strong>Your Claude account</strong>
+                  <span className="settings__note">through Claude Code</span>
+                </div>
+                {claude === null ? (
+                  <span className="settings__note">Checking…</span>
+                ) : !claude.installed ? (
+                  <span className="settings__note">
+                    Claude Code isn't installed on this Mac.{" "}
+                    <button type="button" className="link-btn" onClick={() => void openExternal("https://code.claude.com/docs/en/setup")}>
+                      How to install it
+                    </button>
+                    , then open Terminal, type <code>claude</code> and sign in.
+                  </span>
+                ) : !claude.signedIn ? (
+                  <span className="settings__note">
+                    Claude Code is installed but not signed in. Open Terminal, type <code>claude</code> and follow the steps to sign in.
+                  </span>
+                ) : (
+                  <span className="settings__ok">Connected{planName(claude.plan) ? ` · ${planName(claude.plan)}` : ""}</span>
+                )}
+                <button type="button" className="secondary-btn" onClick={recheck}>
+                  Check again
+                </button>
+              </div>
+              <div className="settings__claude-head">
+                <strong>Or an Anthropic API key</strong>
+              </div>
               {keySaved ? (
                 <div className="settings__row">
                   <span className="settings__ok">API key saved in your Keychain</span>
@@ -156,6 +197,7 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
                       void clearKey().then(() => {
                         setKeySaved(false);
                         setMessage("API key removed.");
+                        void checkAccess(true);
                       })
                     }
                   >
@@ -182,11 +224,39 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
                   </button>
                 </div>
               )}
-              <div className="segmented segmented--compact">
-                {AI_MODELS.map((m) => (
+              {keySaved && claude?.signedIn && (
+                <div className="segmented segmented--compact" role="radiogroup" aria-label="Use">
+                  {(
+                    [
+                      ["claude-code", "Use my Claude account"],
+                      ["api-key", "Use the API key"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="radio"
+                      aria-checked={(engine ?? "claude-code") === id}
+                      className={`segmented__item${(engine ?? "claude-code") === id ? " is-active" : ""}`}
+                      onClick={() => {
+                        setEnginePreference(id);
+                        setEngine(id);
+                        void checkAccess(true);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="popover__label">Model</div>
+              <div className="segmented segmented--compact" role="radiogroup" aria-label="Model">
+                {MODELS.map((m) => (
                   <button
                     key={m.id}
                     type="button"
+                    role="radio"
+                    aria-checked={model === m.id}
                     className={`segmented__item${model === m.id ? " is-active" : ""}`}
                     title={m.note}
                     onClick={() => {
@@ -199,8 +269,8 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
                 ))}
               </div>
               <div className="settings__note">
-                Get a key at console.anthropic.com. When you use an AI action, the text of the notes involved is sent to Anthropic's
-                Claude; nothing is sent otherwise.
+                When you ask Claude something, the board's text (and a picture of it) is sent to Anthropic to work on. Nothing is sent
+                otherwise.
               </div>
             </>
           )}
@@ -260,4 +330,22 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
       </div>
     </>
   );
+}
+
+/** A friendly name for a Claude plan. */
+function planName(plan: string | null): string {
+  switch ((plan ?? "").toLowerCase()) {
+    case "max":
+      return "Max plan";
+    case "pro":
+      return "Pro plan";
+    case "team":
+      return "Team plan";
+    case "enterprise":
+      return "Enterprise plan";
+    case "":
+      return "";
+    default:
+      return "Claude account";
+  }
 }
