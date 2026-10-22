@@ -44,7 +44,16 @@ APPLE_SIGNING_IDENTITY="$IDENTITY" pnpm tauri build --bundles app,dmg "$@"
 APP="src-tauri/target/release/bundle/macos/Mythra Board.app"
 codesign --verify --deep --strict "$APP"
 echo "Signature OK."
-ls src-tauri/target/release/bundle/dmg/*.dmg
+DMG="$(ls -t src-tauri/target/release/bundle/dmg/*.dmg | head -1)"
+echo "$DMG"
+
+# The app inside is already notarised; notarise the disk image too, so it opens cleanly when downloaded.
+if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+  xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+  xcrun stapler staple "$DMG"
+  spctl --assess --type open --context context:primary-signature -v "$DMG"
+  spctl --assess --type execute -v "$APP"
+fi
 
 BUNDLE="src-tauri/target/release/bundle/macos"
 if [ -f "$BUNDLE/Mythra Board.app.tar.gz.sig" ]; then
