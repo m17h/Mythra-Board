@@ -4,6 +4,7 @@ import { chat, getModel, MODELS, resetChat, send, setModel, stop, useChat, type 
 import { openExternal } from "../persistence";
 import { boardStore, useBoard } from "../store";
 import { SparkleIcon } from "./icons";
+import { usePresence } from "../useDismiss";
 
 const INSTALL_URL = "https://code.claude.com/docs/en/setup";
 
@@ -24,10 +25,11 @@ const WORK: [string, string, boolean][] = [
 /** The Claude panel: a conversation down the right of the board. */
 export function AssistantPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const open = useChat((s) => s.open);
-  return open ? <Panel onOpenSettings={onOpenSettings} /> : null;
+  const [shown, leaving] = usePresence(open);
+  return shown ? <Panel onOpenSettings={onOpenSettings} leaving={leaving} /> : null;
 }
 
-function Panel({ onOpenSettings }: { onOpenSettings: () => void }) {
+function Panel({ onOpenSettings, leaving }: { onOpenSettings: () => void; leaving: boolean }) {
   const turns = useChat((s) => s.turns);
   const running = useChat((s) => s.running);
   const itemCount = useBoard((s) => s.nodes.length);
@@ -77,7 +79,7 @@ function Panel({ onOpenSettings }: { onOpenSettings: () => void }) {
     <aside
       ref={panel}
       tabIndex={-1}
-      className="assistant"
+      className={`assistant${leaving ? " is-leaving" : ""}`}
       aria-label="Claude"
       onKeyDown={(e) => {
         e.stopPropagation();

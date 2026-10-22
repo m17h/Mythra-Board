@@ -5,7 +5,7 @@ import { checkAccess } from "../assistant/ask";
 import { formatBytes } from "../images";
 import { cleanupFiles, isTauri, openExternal } from "../persistence";
 import { autoCheckEnabled, checkForUpdate, installUpdate, setAutoCheck, useUpdateState } from "../updates";
-import { useEscape } from "../useDismiss";
+import { useEscape, useLeave } from "../useDismiss";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 type Location = { path: string; kind: "default" | "icloud" | "custom"; icloudAvailable: boolean };
@@ -19,6 +19,7 @@ const LOCATION_NAMES = { default: "On this Mac", icloud: "iCloud Drive", custom:
 
 /** App-wide settings: appearance, where boards are kept, and AI. */
 export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; onChanged?: () => void }) {
+  const [leaving, close] = useLeave(onClose);
   const desktop = isTauri();
   const [location, setLocation] = useState<Location | null>(null);
   const [moving, setMoving] = useState(false);
@@ -36,7 +37,7 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
   const [version, setVersion] = useState("");
   const [autoUpdate, setAutoUpdate] = useState(autoCheckEnabled);
   const update = useUpdateState();
-  useEscape(onClose);
+  useEscape(close);
 
   useEffect(() => {
     if (!desktop) return;
@@ -77,9 +78,9 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
 
   return (
     <>
-      <div className="palette-scrim" onPointerDown={onClose} />
+      <div className={`palette-scrim${leaving ? " is-leaving" : ""}`} onPointerDown={close} />
       <div
-        className="dialog settings"
+        className={`dialog settings${leaving ? " is-leaving" : ""}`}
         role="dialog"
         aria-label="Settings"
         onKeyDown={(e) => e.stopPropagation()}
@@ -148,7 +149,14 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
                 once, the other version is kept in its Version history.
               </div>
             </>
-          ) : null}
+          ) : (
+            // Room for the details while they load, so the window doesn't jump.
+            <div className="settings__loading" aria-hidden>
+              <span />
+              <span />
+              <span />
+            </div>
+          )}
         </div>
 
         <div className="dialog__section">
@@ -323,7 +331,7 @@ export function SettingsDialog({ onClose, onChanged }: { onClose: () => void; on
         <div className="dialog__actions">
           <span className="settings__version">{version && `Mythra Board ${version}`}</span>
           <span className="dialog__spacer" />
-          <button type="button" className="primary-btn" onClick={onClose}>
+          <button type="button" className="primary-btn" onClick={close}>
             Done
           </button>
         </div>

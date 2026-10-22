@@ -76,7 +76,7 @@ import { boardStore, pauseSnapping, setSnapZoom, useBoard } from "./store";
 import { BACKGROUNDS, DEFAULT_NOTE_WIDTH, type BoardBackground, type BoardNode, type Color, type LinkEdge } from "./types";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { useTheme } from "./theme";
-import { useDismiss } from "./useDismiss";
+import { useDismiss, usePresence } from "./useDismiss";
 import { useShortcuts } from "./useShortcuts";
 
 const IS_TAURI = isTauri();
@@ -117,6 +117,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
   const connecting = useBoard((s) => s.connecting);
   const editingId = useBoard((s) => s.editingId);
   const [showHelp, setShowHelp] = useState(false);
+  const [helpShown, helpLeaving] = usePresence(showHelp);
   const [showMap, setShowMap] = useState(false);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const { theme } = useTheme();
@@ -617,7 +618,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         </ToolButton>
       </div>
 
-      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {helpShown && <HelpPanel leaving={helpLeaving} onClose={() => setShowHelp(false)} />}
       <AssistantPanel onOpenSettings={() => setSettingsOpen(true)} />
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
       {presenting && <Presentation onExit={() => setPresenting(false)} />}
@@ -1018,9 +1019,9 @@ function ClaudeButton() {
   );
 }
 
-function HelpPanel({ onClose }: { onClose: () => void }) {
+function HelpPanel({ onClose, leaving }: { onClose: () => void; leaving: boolean }) {
   return (
-    <div className="help-panel" role="dialog" aria-label="Keyboard shortcuts">
+    <div className={`help-panel${leaving ? " is-leaving" : ""}`} role="dialog" aria-label="Keyboard shortcuts">
       <div className="help-panel__head">
         <span>Shortcuts</span>
         <button type="button" className="help-panel__close" onClick={onClose} aria-label="Close">

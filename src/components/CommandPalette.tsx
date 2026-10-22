@@ -1,3 +1,4 @@
+import { useLeave } from "../useDismiss";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { keyLabel } from "../platform";
 
@@ -50,6 +51,7 @@ export function CommandPalette({
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [leaving, close] = useLeave(onClose);
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -82,8 +84,8 @@ export function CommandPalette({
 
   return (
     <>
-      <div className="palette-scrim" onPointerDown={onClose} />
-      <div className="palette" role="dialog" aria-label="Command palette">
+      <div className={`palette-scrim${leaving ? " is-leaving" : ""}`} onPointerDown={close} />
+      <div className={`palette${leaving ? " is-leaving" : ""}`} role="dialog" aria-label="Command palette">
         <input
           ref={input}
           className="palette__input"
@@ -94,7 +96,7 @@ export function CommandPalette({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             e.stopPropagation();
-            if (e.key === "Escape") onClose();
+            if (e.key === "Escape") close();
             else if (e.key === "ArrowDown") {
               e.preventDefault();
               setActive((a) => Math.min(a + 1, results.length - 1));

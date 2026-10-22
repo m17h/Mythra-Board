@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { currentDoc, flushSave, listVersions, loadVersion, snapshotNow } from "../persistence";
 import { boardStore, useBoard, type BoardDoc } from "../store";
-import { useEscape } from "../useDismiss";
+import { useEscape, useLeave } from "../useDismiss";
 import Thumbnail from "./Thumbnail";
 
 function when(t: number, now = Date.now()): string {
@@ -19,12 +19,13 @@ function when(t: number, now = Date.now()): string {
  * work; picking one previews it, and restoring it is a single step you can undo.
  */
 export function VersionHistory({ onClose, onNotice }: { onClose: () => void; onNotice: (m: string) => void }) {
+  const [leaving, close] = useLeave(onClose);
   const boardId = useBoard((s) => s.boardId);
   const [versions, setVersions] = useState<number[] | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [preview, setPreview] = useState<BoardDoc | null>(null);
   const [error, setError] = useState(false);
-  useEscape(onClose);
+  useEscape(close);
 
   const refresh = () =>
     listVersions(boardId).then(setVersions, (err) => {
@@ -68,10 +69,10 @@ export function VersionHistory({ onClose, onNotice }: { onClose: () => void; onN
   };
 
   return (
-    <div className="side-panel" role="dialog" aria-label="Version history">
+    <div className={`side-panel${leaving ? " is-leaving" : ""}`} role="dialog" aria-label="Version history">
       <div className="side-panel__head">
         <span>Version history</span>
-        <button type="button" className="help-panel__close" onClick={onClose} aria-label="Close">
+        <button type="button" className="help-panel__close" onClick={close} aria-label="Close">
           ×
         </button>
       </div>

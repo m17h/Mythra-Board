@@ -3,7 +3,7 @@ import { exportBoardFile } from "../boardFile";
 import { hiddenItems } from "../mindmap";
 import { currentDoc } from "../persistence";
 import { boardStore } from "../store";
-import { useEscape } from "../useDismiss";
+import { useEscape, useLeave } from "../useDismiss";
 
 type Format = "png" | "svg" | "pdf" | "mythra";
 
@@ -27,12 +27,13 @@ export function ExportDialog({
   initialFormat?: Format;
 }) {
   const s = boardStore.getState();
+  const [leaving, close] = useLeave(onClose);
   const selectedCount = s.nodes.filter((n) => n.selected).length;
   const [format, setFormat] = useState<Format>(initialFormat);
   const [scope, setScope] = useState<"board" | "selection">(selectedCount ? "selection" : "board");
   const [background, setBackground] = useState(true);
   const [busy, setBusy] = useState(false);
-  useEscape(onClose, !busy);
+  useEscape(close, !busy);
 
   /** The items to export, captured before selection outlines are cleared. */
   const pick = async () => {
@@ -69,7 +70,7 @@ export function ExportDialog({
           onNotice(saved ? "Exported" : null);
         }
       }
-      onClose();
+      close();
     } catch (err) {
       console.error("Export failed", err);
       onNotice(copy ? "Couldn't copy the picture" : "Couldn't export the board");
@@ -80,9 +81,9 @@ export function ExportDialog({
 
   return (
     <>
-      <div className="palette-scrim" onPointerDown={busy ? undefined : onClose} />
+      <div className={`palette-scrim${leaving ? " is-leaving" : ""}`} onPointerDown={busy ? undefined : close} />
       <div
-        className="dialog"
+        className={`dialog${leaving ? " is-leaving" : ""}`}
         role="dialog"
         aria-label="Export"
         onKeyDown={(e) => e.stopPropagation()}
@@ -139,7 +140,7 @@ export function ExportDialog({
             </button>
           )}
           <span className="dialog__spacer" />
-          <button type="button" className="secondary-btn" disabled={busy} onClick={onClose}>
+          <button type="button" className="secondary-btn" disabled={busy} onClick={close}>
             Cancel
           </button>
           <button type="button" className="primary-btn" disabled={busy} onClick={() => void run(false)}>

@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react";
 import { refreshBoardIndex } from "../navigation";
 import { deleteForever, listTrash, restoreBoard, TRASH_KEEP_DAYS, type TrashedBoard } from "../persistence";
-import { useEscape } from "../useDismiss";
+import { useEscape, useLeave } from "../useDismiss";
 import Thumbnail from "./Thumbnail";
 
 const daysLeft = (deletedAt: number) => Math.max(0, TRASH_KEEP_DAYS - Math.floor((Date.now() - deletedAt) / 86_400_000));
 
 /** Boards you deleted in the last 30 days: bring them back, or remove them for good. */
 export function TrashDialog({ onClose, onRestored }: { onClose: () => void; onRestored: () => void }) {
+  const [leaving, close] = useLeave(onClose);
   const [items, setItems] = useState<TrashedBoard[] | null>(null);
   const [confirmEmpty, setConfirmEmpty] = useState(false);
-  useEscape(onClose);
+  useEscape(close);
 
   const refresh = () => listTrash().then(setItems, () => setItems([]));
   useEffect(() => {
@@ -35,8 +36,8 @@ export function TrashDialog({ onClose, onRestored }: { onClose: () => void; onRe
 
   return (
     <>
-      <div className="palette-scrim" onPointerDown={onClose} />
-      <div className="dialog trash" role="dialog" aria-label="Recently deleted" onKeyDown={(e) => e.stopPropagation()}>
+      <div className={`palette-scrim${leaving ? " is-leaving" : ""}`} onPointerDown={close} />
+      <div className={`dialog trash${leaving ? " is-leaving" : ""}`} role="dialog" aria-label="Recently deleted" onKeyDown={(e) => e.stopPropagation()}>
         <div className="dialog__title">Recently deleted</div>
         <div className="settings__note">Deleted boards stay here for {TRASH_KEEP_DAYS} days, then they're removed for good.</div>
         <div className="trash__list">
@@ -82,7 +83,7 @@ export function TrashDialog({ onClose, onRestored }: { onClose: () => void; onRe
               </button>
             ))}
           <span className="dialog__spacer" />
-          <button type="button" className="primary-btn" onClick={onClose}>
+          <button type="button" className="primary-btn" onClick={close}>
             Done
           </button>
         </div>
