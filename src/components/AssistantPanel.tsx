@@ -37,9 +37,14 @@ function Panel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
+  const panel = useRef<HTMLElement>(null);
   useEffect(() => {
-    void checkAccess().then(setAccess);
-    input.current?.focus();
+    // Take the keyboard straight away (so typing, or Escape, goes to the panel).
+    panel.current?.focus();
+    void checkAccess().then((a) => {
+      setAccess(a);
+      requestAnimationFrame(() => input.current?.focus());
+    });
   }, []);
 
   // Keep the newest message in view.
@@ -70,6 +75,8 @@ function Panel({ onOpenSettings }: { onOpenSettings: () => void }) {
   const ideas = itemCount ? WORK : START;
   return (
     <aside
+      ref={panel}
+      tabIndex={-1}
       className="assistant"
       aria-label="Claude"
       onKeyDown={(e) => {

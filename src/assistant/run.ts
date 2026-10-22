@@ -61,6 +61,9 @@ export const setEnginePreference = (e: Engine) => localStorage.setItem(ENGINE_KE
 // ---------- Talking to the host (the desktop app, or a test harness) ----------
 
 type McpTool = { name: string; description: string; inputSchema: Record<string, unknown> };
+/** Claude Code names tools after the server that provides them. */
+const TOOL_NAMES_NOTE = `Your board tools are named with the prefix mcp__board__ (for example mcp__board__get_board, mcp__board__add_content, mcp__board__view_board). Always call them by those full names.`;
+
 export const MCP_TOOLS: McpTool[] = TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.input_schema }));
 
 export type StartOptions = { runId: string; prompt: string; system: string; tools: McpTool[]; model: string; resume: string | null };
@@ -265,7 +268,7 @@ async function runWithClaudeCode(prompt: string, runId: string, finish: (error?:
       else finish(friendlyError(stderr.trim() || `Claude Code stopped unexpectedly (code ${code}).`));
     },
   });
-  await h.start({ runId, prompt, system: SYSTEM_PROMPT, tools: MCP_TOOLS, model: getModel(), resume: chat.getState().sessionId });
+  await h.start({ runId, prompt, system: `${SYSTEM_PROMPT}\n\n${TOOL_NAMES_NOTE}`, tools: MCP_TOOLS, model: getModel(), resume: chat.getState().sessionId });
 }
 
 /** Stop the run in progress; whatever Claude already did stays (and is undoable). */

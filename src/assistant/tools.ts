@@ -345,18 +345,22 @@ function placeBlock(size: { width: number; height: number }, place: PlaceSpec | 
   const anchor = place?.near ? nodes.find((n) => n.id === place.near) : undefined;
   if (anchor) {
     // Beside an item means close to it, like its neighbours.
-    const GAP = anchor.type === "frame" ? 48 : 60;
+    const GAP = anchor.type === "frame" ? 48 : 90;
     const a = rectOf(anchor);
     const side = place?.side ?? "right";
     const step = { right: [1, 0], left: [-1, 0], below: [0, 1], above: [0, -1] }[side];
+    // Next to a section, line up with its top (like columns); next to an item, centre on it
+    // (like ideas branching from it).
+    const centred = anchor.type !== "frame";
+    const across = (along: number, length: number, own: number) => (centred ? along + length / 2 - own / 2 : along);
     let p =
       side === "right"
-        ? { x: a.x + a.width + GAP, y: a.y }
+        ? { x: a.x + a.width + GAP, y: across(a.y, a.height, size.height) }
         : side === "left"
-          ? { x: a.x - GAP - size.width, y: a.y }
+          ? { x: a.x - GAP - size.width, y: across(a.y, a.height, size.height) }
           : side === "below"
-            ? { x: a.x, y: a.y + a.height + GAP }
-            : { x: a.x, y: a.y - GAP - size.height };
+            ? { x: across(a.x, a.width, size.width), y: a.y + a.height + GAP }
+            : { x: across(a.x, a.width, size.width), y: a.y - GAP - size.height };
     for (let i = 0; i < 60 && !fits(p); i++) p = { x: p.x + step[0] * 80, y: p.y + step[1] * 80 };
     return p;
   }
@@ -605,9 +609,11 @@ async function addContent(args: Args): Promise<ToolResult> {
   const p = plan(blocks, links, layout, typeof args.columns === "number" ? args.columns : undefined, kindOfId);
   if (!p.items.length) return { text: `Nothing was added. ${p.problems.join(" ")}` };
   const { ids: made, created, rect } = await realise(p, place);
-  // A new board takes its name from the title Claude gives it.
-  const heading = p.items.find((i) => i.type === "text" && i.data.textStyle === "title" && i.data.text?.trim());
-  if (heading && /^untitled board$/i.test(state().title.trim())) boardStore.setState({ title: heading.data.text!.trim().slice(0, 120) });
+  // A new board takes its name from the title Claude gives it (or the centre of its mind map).
+  const heading =
+    p.items.find((i) => i.type === "text" && i.data.textStyle === "title" && i.data.text?.trim()) ??
+    (blocks[0]?.kind === "mindmap" ? p.items.find((i) => i.data.text?.trim()) : undefined);
+  if (heading && /^untitled board$/i.test(state().title.trim())) boardStore.setState({ title: heading.data.text!.replace(/\s+/g, " ").trim().slice(0, 120) });
   showItems(created);
   const problems = layoutProblems(state().nodes, new Set(created));
   return report([

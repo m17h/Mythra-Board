@@ -28,7 +28,7 @@ Built with [Tauri 2](https://tauri.app), React and [React Flow](https://reactflo
 - **Export** (⇧⌘E): PNG, true-vector SVG, PDF or a board file — the whole board or just the selection — or copy as a picture.
 - **Present** (⇧⌘P) turns sections into full-screen slides, with a laser pointer (click and drag).
 - **Hand-drawn style** (board ⋯ menu) gives wobbly lines and handwriting.
-- **AI** (needs your Anthropic API key in Settings, stored in the Keychain): brainstorm ideas from a note, turn a note into a mind map, or summarise the board. The text involved is sent to Claude only when you use one of these.
+- **Claude** (⌘J, or ✨): describe what you want and Claude builds it: trip plans, mind maps, flowcharts, project plans, comparisons, presentations, several linked boards. It also organises messy boards, restyles, extends and summarises. You watch it work, and one Undo takes it all back. It runs through your own **Claude Code** (install it and sign in with `claude` in Terminal; Mythra Board never handles your login), or an Anthropic API key in Settings. Claude only gets the board tools: it can't touch files or run commands. The board's text and a picture of it are sent to Anthropic only when you ask Claude something.
 
 Boards save automatically. Each save is written safely with a backup; deleted boards go to `trash/`, pictures to `assets/`, snapshots to `history/`. If a synced board was changed on two Macs at once, the other copy is kept in Version history.
 
@@ -67,4 +67,5 @@ existing copies of the app can't be updated). Its public half is in `src-tauri/t
 - `src-tauri/src/storage.rs` – atomic file writes, backups, trash, history, images and moving folders
 - `src-tauri/src/ai.rs` – Claude requests (key kept in the Keychain); `src-tauri/src/menu.rs` – the menu bar
 - `src-tauri/src/windows.rs`, `src/windows.ts` – multiple windows; `src/updates.ts` – automatic updates
+- `src/assistant/` – Claude: `prompt.ts` (how to make good boards), `tools.ts` (the board tools), `compose.ts` (layout engine), `run.ts` (conversations); `src-tauri/src/agent.rs` runs Claude Code with the board tools over a local MCP server
 - `.github/workflows/build.yml` – checks every push; builds macOS, Windows and Linux installers for version tags

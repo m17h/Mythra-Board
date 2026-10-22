@@ -3346,6 +3346,9 @@ svg.is-locked::before {
   overflow: hidden;
   animation: rise 0.16s ease-out;
 }
+.assistant:focus {
+  outline: none;
+}
 .assistant__head {
   display: flex;
   align-items: center;
@@ -3661,4 +3664,13 @@ svg.is-locked::before {
 .settings__claude .settings__note {
   flex: 1;
   min-width: 200px;
+}
+.assistant__setup .link-btn,
+.settings__note .link-btn {
+  display: inline;
+  padding: 0;
+  color: var(--accent);
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

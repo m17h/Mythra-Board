@@ -8,7 +8,7 @@ import {
 } from "@xyflow/react";
 import { nanoid } from "nanoid";
 import { createStore, useStore } from "zustand";
-import { center, containsPoint, rectsBounds, type Point, type Rect } from "./geometry";
+import { center, containsPoint, rectsBounds, rectsOverlap, type Point, type Rect } from "./geometry";
 import { decorate, defaultSize, freeSpot, itemsInFrame, rectOf } from "./layout";
 import { arrowBox, followItems, stuckEnds, unstickMoved } from "./arrowBinding";
 import { hiddenItems, tidyTree, treeRoots } from "./mindmap";
@@ -338,6 +338,23 @@ const withFramesFirst = (nodes: BoardNode[]) => {
 
 const deselected = <T extends { selected?: boolean }>(items: T[]) =>
   items.map((x) => (x.selected ? { ...x, selected: false } : x));
+
+/** The nearest spot to `at` where something of this size doesn't cover anything else. */
+export function clearSpotNear(at: Point, size: { width: number; height: number }, others: Rect[]): Point {
+  const free = (p: Point) => !others.some((r) => rectsOverlap({ ...p, ...size }, r, 16));
+  if (free(at)) return at;
+  const step = 40;
+  for (let ring = 1; ring <= 30; ring++) {
+    // Try points around a growing square, nearest first.
+    const candidates: Point[] = [];
+    for (let i = -ring; i <= ring; i++)
+      for (let j = -ring; j <= ring; j++) if (Math.max(Math.abs(i), Math.abs(j)) === ring) candidates.push({ x: at.x + i * step, y: at.y + j * step });
+    candidates.sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y));
+    const found = candidates.find(free);
+    if (found) return found;
+  }
+  return at;
+}
 
 export function createBoardStore() {
   // A history entry pushed by `begin`/`commit`, waiting to see whether anything changed.
@@ -814,7 +831,8 @@ export function createBoardStore() {
 
       addBoardCard: (boardId, title, at) => {
         const size = defaultSize("board");
-        return get().addItem("board", { x: at.x - size.width / 2, y: at.y - size.height / 2 }, { data: { boardId, text: title } });
+        const spot = clearSpotNear({ x: at.x - size.width / 2, y: at.y - size.height / 2 }, size, get().nodes.filter((n) => n.type !== "frame").map(rectOf));
+        return get().addItem("board", spot, { data: { boardId, text: title } });
       },
 
       frameSelection: () => {

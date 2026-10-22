@@ -990,6 +990,7 @@ const SHORTCUTS: [string, string][] = [
   ["Space + drag", "Pan"],
   ["⇧1 / ⇧2 / ⇧0", "Fit all / Zoom to selection / 100%"],
   ["⌘K", "Command palette: every action and board"],
+  ["⌘J", "Ask Claude to build or change the board"],
   ["⌘F", "Find on this board"],
   ["⌥ + arrow keys", "Move to the nearest item in that direction"],
   ["⌘B / ⌘I", "Bold / Italic while typing"],

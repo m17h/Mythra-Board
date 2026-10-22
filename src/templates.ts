@@ -178,7 +178,7 @@ export function welcomeBoard() {
 
   // Go further
   b.add("frame", { x: 920, y: 0 }, { text: "Go further", color: "purple" }, { width: 420, height: 560 });
-  b.add("note", { x: 950, y: 50 }, { text: "Press **⌘K** to find any action or board.", color: "purple" }, { width: 360 });
+  b.add("note", { x: 950, y: 50 }, { text: "Press **⌘K** to find any action or board, and **⌘J** to ask Claude to build a board for you.", color: "purple" }, { width: 360 });
   b.add("note", { x: 950, y: 140 }, { text: "Link boards together: [[My first ideas]] is a link. Click it to create that board.", color: "purple" }, { width: 360 });
   b.add("note", { x: 950, y: 250 }, { text: "**Right-click** anything for more options, and press **?** for every shortcut.", color: "purple" }, { width: 360 });
   b.add("note", { x: 950, y: 360 }, { text: "Sections like these become slides: press **⇧⌘P** to present them.", color: "purple" }, { width: 360 });
