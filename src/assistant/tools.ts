@@ -13,6 +13,11 @@ import {
   BACKGROUNDS,
   BOARD_STYLES,
   COLORS,
+  EFFECTS,
+  FONTS,
+  LINK_DASHES,
+  LINK_HEADS,
+  LINK_MOTIONS,
   FILLS,
   OUTLINE_STYLES,
   SHAPES,
@@ -22,9 +27,11 @@ import {
   type BoardBackground,
   type BoardNode,
   type BoardStyle,
+  type FontKind,
   type ItemData,
   type LinkEdge,
 } from "../types";
+import { asBoardColor, BOARD_TINTS, boardLook, THEMES } from "../look";
 import {
   arrange,
   estimateHeight,
@@ -43,13 +50,23 @@ export type ToolDef = { name: string; description: string; input_schema: Record<
 
 // ---------- Schemas ----------
 
-const colorProp = { type: "string", enum: COLORS, description: "plain is white/grey; the others are soft tints." };
+const colorProp = {
+  type: "string",
+  description: `A palette colour (${COLORS.join(", ")}; plain is white or grey) or any colour as #rrggbb.`,
+};
 const lookProps = {
   color: colorProp,
-  fill: { type: "string", enum: FILLS, description: "How the colour is painted. Default solid; light is a paler tint." },
+  fill: {
+    type: "string",
+    enum: FILLS,
+    description: "How the colour is painted: solid (default, a soft tint), light (paler), bold (the full colour, with contrasting text), hatch, or none.",
+  },
   outline: { type: "number", enum: [0, 1, 2, 4], description: "Outline thickness. Notes default to 0, shapes to 2, sections to 1." },
   outline_color: colorProp,
   outline_style: { type: "string", enum: OUTLINE_STYLES },
+  text_color: { ...colorProp, description: "Text colour, if it shouldn't follow the item's colour: a palette colour or #rrggbb." },
+  font: { type: "string", enum: FONTS, description: "Typeface for this item, if it shouldn't follow the board's." },
+  effect: { type: "string", enum: EFFECTS, description: "glow or pulse makes one item stand out. Use for at most one or two key items." },
 };
 const itemProps = {
   kind: { type: "string", enum: ["note", "text", "shape", "board", "link"] },
@@ -98,7 +115,15 @@ const linkSchema = {
     label: { type: "string" },
     curve: { type: "string", enum: ["curved", "straight", "elbow"] },
     arrow: { type: "string", enum: ["none", "end", "both"] },
-    dash: { type: "string", enum: ["solid", "dashed"] },
+    dash: { type: "string", enum: LINK_DASHES },
+    color: { ...colorProp, description: "Line colour: a palette colour or #rrggbb. Leave out for the board's usual grey." },
+    width: { type: "string", enum: ["thin", "normal", "thick"] },
+    head: { type: "string", enum: LINK_HEADS, description: "Shape at the arrow end(s): arrow (default), open, dot or diamond." },
+    motion: {
+      type: "string",
+      enum: LINK_MOTIONS,
+      description: "flow: dashes travel along the line (shows direction or an active path). pulse: a soft glow. Only for the one or two most important lines.",
+    },
   },
   required: ["from", "to"],
 };
@@ -157,6 +182,8 @@ export const TOOLS: ToolDef[] = [
               id: { type: "string" },
               ...itemProps,
               title: { type: ["string", "null"] },
+              text_color: { type: ["string", "null"], description: "A palette colour or #rrggbb; null to go back to automatic." },
+              font: { type: ["string", "null"], enum: [...FONTS, null], description: "null to use the board's typeface." },
               locked: { type: "boolean" },
             },
             required: ["id"],
@@ -203,7 +230,17 @@ export const TOOLS: ToolDef[] = [
           type: "array",
           items: {
             type: "object",
-            properties: { id: { type: "string" }, label: { type: "string" }, curve: { type: "string" }, arrow: { type: "string" }, dash: { type: "string" } },
+            properties: {
+              id: { type: "string" },
+              label: { type: "string" },
+              curve: { type: "string" },
+              arrow: { type: "string" },
+              dash: { type: "string" },
+              color: { type: ["string", "null"], description: "#rrggbb or palette colour; null for the usual grey." },
+              width: { type: "string", enum: ["thin", "normal", "thick"] },
+              head: { type: "string", enum: LINK_HEADS },
+              motion: { type: "string", enum: LINK_MOTIONS },
+            },
             required: ["id"],
           },
         },
@@ -213,10 +250,21 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "set_board",
-    description: "Change the open board's title, background (dots, grid or plain) or style (clean, or sketchy for a hand-drawn look).",
+    description:
+      "Change the open board's title and look. A theme sets colour, pattern, typeface and style together; then any of those can be changed on their own.",
     input_schema: {
       type: "object",
-      properties: { title: { type: "string" }, background: { type: "string", enum: BACKGROUNDS }, style: { type: "string", enum: BOARD_STYLES } },
+      properties: {
+        title: { type: "string" },
+        theme: { type: "string", enum: THEMES.map((t) => t.id), description: THEMES.map((t) => `${t.id}: ${t.description}`).join("; ") },
+        board_color: {
+          type: "string",
+          description: `The board's colour: default (follows the app's light or dark mode), ${Object.keys(BOARD_TINTS).join(", ")}, or any #rrggbb. Dark colours (slate, midnight, blueprint, chalkboard, charcoal, or a dark #rrggbb) switch items to their dark look automatically.`,
+        },
+        background: { type: "string", enum: BACKGROUNDS, description: "The pattern: dots, grid, lines (ruled paper), cross, or plain." },
+        font: { type: "string", enum: FONTS, description: "The board's typeface." },
+        style: { type: "string", enum: BOARD_STYLES, description: "clean, or sketchy for a hand-drawn look." },
+      },
     },
   },
   {
@@ -670,7 +718,10 @@ function getBoard(): ToolResult {
   const owner = sectionOf(nodes);
   const lines: string[] = [];
   const counts = `${nodes.length} item${nodes.length === 1 ? "" : "s"}, ${s.edges.length} link${s.edges.length === 1 ? "" : "s"}`;
-  lines.push(`Board "${s.title}" (id ${s.boardId}) · background ${s.background} · style ${s.style} · ${counts}`);
+  const scheme = boardLook(s.boardColor, "light").scheme;
+  lines.push(
+    `Board "${s.title}" (id ${s.boardId}) · colour ${s.boardColor}${s.boardColor !== "default" ? ` (${scheme})` : ""} · pattern ${s.background} · font ${s.font} · style ${s.style} · ${counts}`,
+  );
   const selected = nodes.filter((n) => n.selected).map((n) => n.id);
   if (selected.length) lines.push(`Selected by the user: ${selected.join(", ")}`);
   if (!nodes.length) {
@@ -685,7 +736,10 @@ function getBoard(): ToolResult {
     const r = rectOf(n);
     const d = n.data;
     const look = [
-      d.color !== "plain" || n.type === "note" ? d.color : "",
+      d.hex ? d.hex : d.color !== "plain" || n.type === "note" ? d.color : "",
+      d.textColor ? `text ${d.textColor}` : "",
+      d.font ? `font ${d.font}` : "",
+      d.effect ? d.effect : "",
       d.fill && d.fill !== "solid" ? `fill ${d.fill}` : "",
       d.outline !== undefined ? `outline ${d.outline}${d.outlineColor ? ` ${d.outlineColor}` : ""}${d.outlineStyle === "dashed" ? " dashed" : ""}` : "",
       (n.type === "note" || n.type === "shape") && d.size !== "m" ? `size ${d.size}` : "",
@@ -706,7 +760,19 @@ function getBoard(): ToolResult {
     lines.push("Links (id: from → to):");
     for (const e of s.edges) {
       const d = e.data;
-      const style = d ? [d.curve !== "curved" ? d.curve : "", d.arrow !== "end" ? `arrow ${d.arrow}` : "", d.dash === "dashed" ? "dashed" : ""].filter(Boolean).join(" ") : "";
+      const style = d
+        ? [
+            d.curve !== "curved" ? d.curve : "",
+            d.arrow !== "end" ? `arrow ${d.arrow}` : "",
+            d.dash !== "solid" ? d.dash : "",
+            d.color ? `colour ${d.color}` : "",
+            d.width && d.width !== 2 ? (d.width === 1 ? "thin" : "thick") : "",
+            d.head && d.head !== "arrow" ? `${d.head} ends` : "",
+            d.motion ? d.motion : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "";
       lines.push(`- ${e.id}: ${e.source} → ${e.target}${d?.label ? ` ${quote(d.label)}` : ""}${style ? ` (${style})` : ""}`);
     }
   }
@@ -748,6 +814,11 @@ function updateItems(args: Args): ToolResult {
       continue;
     }
     const data: Partial<ItemData> = { ...lookData(u) };
+    // Clearing: a palette colour replaces a custom one; null (or "none") removes a setting.
+    if (COLORS.includes(u.color as never)) data.hex = undefined;
+    if (u.text_color === null) data.textColor = undefined;
+    if (u.font === null) data.font = undefined;
+    if (u.effect === null || u.effect === "none") data.effect = undefined;
     if (typeof u.text === "string") data.text = u.text.slice(0, 4000);
     if (typeof u.title === "string") data.title = u.title.slice(0, 200);
     if (SIZES.includes(u.size as never)) data.size = u.size as ItemData["size"];
@@ -857,7 +928,9 @@ function editLinks(args: Args): ToolResult {
       problems.push(`No link ${String(u.id)}`);
       continue;
     }
-    edges[i] = { ...edges[i], data: { ...edges[i].data!, ...linkData(u as Partial<LinkSpec>) } };
+    const data = { ...edges[i].data!, ...linkData(u as Partial<LinkSpec>) };
+    if (u.color === null) delete data.color;
+    edges[i] = { ...edges[i], data };
     changed++;
   }
   const remove = new Set(ids(args.remove));
@@ -872,12 +945,33 @@ function editLinks(args: Args): ToolResult {
 }
 
 function setBoard(args: Args): ToolResult {
-  const patch: { title?: string; background?: BoardBackground; style?: BoardStyle } = {};
-  if (typeof args.title === "string" && args.title.trim()) patch.title = args.title.trim().slice(0, 120);
-  if (BACKGROUNDS.includes(args.background as never)) patch.background = args.background as BoardBackground;
-  if (BOARD_STYLES.includes(args.style as never)) patch.style = args.style as BoardStyle;
-  boardStore.setState(patch);
-  return { text: Object.keys(patch).length ? `Board updated: ${Object.entries(patch).map(([k, v]) => `${k} ${v}`).join(", ")}.` : "Nothing to change." };
+  const changes: string[] = [];
+  if (typeof args.title === "string" && args.title.trim()) {
+    boardStore.setState({ title: args.title.trim().slice(0, 120) });
+    changes.push(`title "${args.title.trim().slice(0, 120)}"`);
+  }
+  const look: { background?: BoardBackground; boardColor?: string; font?: FontKind; style?: BoardStyle } = {};
+  const theme = THEMES.find((t) => t.id === args.theme);
+  if (theme) {
+    Object.assign(look, { boardColor: theme.boardColor, background: theme.background, font: theme.font, style: theme.style });
+    changes.push(`theme ${theme.name}`);
+  }
+  const color = asBoardColor(args.board_color);
+  if (color) look.boardColor = color;
+  if (BACKGROUNDS.includes(args.background as never)) look.background = args.background as BoardBackground;
+  if (FONTS.includes(args.font as never)) look.font = args.font as FontKind;
+  if (BOARD_STYLES.includes(args.style as never)) look.style = args.style as BoardStyle;
+  if (Object.keys(look).length) {
+    boardStore.setState(look);
+    for (const [k, v] of Object.entries(look)) if (!theme) changes.push(`${k} ${v}`);
+  }
+  if (args.board_color !== undefined && !color) changes.push(`(unknown board colour "${String(args.board_color)}" ignored)`);
+  const scheme = boardLook(state().boardColor, "light").scheme;
+  return {
+    text: changes.length
+      ? `Board updated: ${changes.join(", ")}.${state().boardColor !== "default" ? ` The board is ${scheme === "dark" ? "dark: items use their dark look and text is light" : "light"}.` : ""}`
+      : "Nothing to change.",
+  };
 }
 
 async function listBoards(): Promise<ToolResult> {

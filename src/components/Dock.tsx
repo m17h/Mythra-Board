@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { boardStore, useBoard, type Tool } from "../store";
-import { SIZES, type LinkArrow } from "../types";
+import { SIZES, type Color, type LinkArrow } from "../types";
 import {
   ArrowBothIcon,
   ArrowToolIcon,
@@ -71,7 +71,7 @@ function ToolOptions() {
           </ToolButton>
         ))}
         <span className="bar-divider" />
-        <Swatches value={penColor} strong onPick={(color) => store.setPen({ color })} />
+        <Swatches value={penColor} strong onPick={(color) => store.setPen({ color: color as Color })} />
         <span className="bar-divider" />
         {SIZES.map((s) => (
           <ToolButton key={s} label={PEN_SIZE_NAMES[s]} active={penSize === s} onClick={() => store.setPen({ size: s })}>
@@ -94,7 +94,7 @@ function ToolOptions() {
         <span className="bar-divider" />
         {tool === "pen" ? (
           <>
-            <Swatches value={penColor} strong onPick={(color) => store.setPen({ color })} />
+            <Swatches value={penColor} strong onPick={(color) => store.setPen({ color: color as Color })} />
             <span className="bar-divider" />
             {SIZES.map((s) => (
               <ToolButton key={s} label={PEN_SIZE_NAMES[s]} active={penSize === s} onClick={() => store.setPen({ size: s })}>

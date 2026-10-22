@@ -378,6 +378,15 @@ export const BackIcon = () => (
     <path d="M15 5 8 12l7 7" />
   </Icon>
 );
+export const PaletteIcon = () => (
+  <Icon>
+    <path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.9 1.8-1.9 0-.5-.2-.9-.5-1.3-.3-.3-.5-.8-.5-1.3 0-1 .8-1.8 1.8-1.8h2.1A4.3 4.3 0 0 0 21 10.4C21 6.3 17 3 12 3z" />
+    <circle cx="7.5" cy="10.5" r="1.1" />
+    <circle cx="10.5" cy="7" r="1.1" />
+    <circle cx="15" cy="7.5" r="1.1" />
+  </Icon>
+);
+
 /** A gear (not a sun, so it can't be mistaken for the light-mode button). */
 export const SettingsIcon = () => (
   <Icon>

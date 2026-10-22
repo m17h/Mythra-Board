@@ -2,6 +2,7 @@ import { memo } from "react";
 import { center, rectsBounds } from "../geometry";
 import { rectOf } from "../layout";
 import { SHAPE_PATHS } from "../shapes";
+import { colorLook, paintCss } from "../look";
 import type { BoardNode, LinkEdge } from "../types";
 
 const PAD = 40;
@@ -26,11 +27,26 @@ function Thumbnail({ nodes, edges }: { nodes: BoardNode[]; edges: LinkEdge[] }) 
         if (!a || !b) return null;
         const p = center(a);
         const q = center(b);
-        return <line key={e.id} x1={p.x} y1={p.y} x2={q.x} y2={q.y} className="thumb__link" />;
+        return (
+          <line
+            key={e.id}
+            x1={p.x}
+            y1={p.y}
+            x2={q.x}
+            y2={q.y}
+            className="thumb__link"
+            style={e.data?.color ? { stroke: paintCss(e.data.color) } : undefined}
+          />
+        );
       })}
       {nodes.map((n) => {
         const r = rects.get(n.id)!;
-        const c = `color--${n.data.color}`;
+        // Custom colours ride along on a wrapping group, so every shape below can use them.
+        const look = colorLook(n.data);
+        const c = look.className;
+        return (
+          <g key={n.id} style={look.style}>
+            {(() => {
         switch (n.type) {
           case "frame":
             return <rect key={n.id} {...r} rx={14} className={`thumb__frame ${c}`} />;
@@ -64,8 +80,11 @@ function Thumbnail({ nodes, edges }: { nodes: BoardNode[]; edges: LinkEdge[] }) 
               return <ellipse key={n.id} cx={r.x + r.width / 2} cy={r.y + r.height / 2} rx={r.width / 2} ry={r.height / 2} className={`thumb__shape ${c}`} />;
             return <rect key={n.id} {...r} rx={12} className={`thumb__shape ${c}`} />;
           default:
-            return <rect key={n.id} {...r} rx={12} className={`thumb__note ${c}`} />;
+            return <rect key={n.id} {...r} rx={12} className={`thumb__note ${c}${n.data.fill === "bold" ? " is-bold" : ""}`} />;
         }
+            })()}
+          </g>
+        );
       })}
     </svg>
   );

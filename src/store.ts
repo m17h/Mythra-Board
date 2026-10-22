@@ -23,6 +23,7 @@ import {
   type BoardStyle,
   type BoardNode,
   type Color,
+  type FontKind,
   type ItemData,
   type ItemType,
   type LinkArrow,
@@ -48,6 +49,10 @@ export type BoardDoc = {
   pinned: boolean;
   background: BoardBackground;
   style: BoardStyle;
+  /** The board's colour: a named board colour or #rrggbb ("default" follows the app). */
+  boardColor?: string;
+  /** The board's typeface. */
+  font?: FontKind;
   viewport: Viewport | null;
   nodes: BoardNode[];
   edges: LinkEdge[];
@@ -121,6 +126,8 @@ export type BoardState = {
   pinned: boolean;
   background: BoardBackground;
   style: BoardStyle;
+  boardColor: string;
+  font: FontKind;
   nodes: BoardNode[];
   edges: LinkEdge[];
   viewport: Viewport | null;
@@ -160,6 +167,8 @@ export type BoardState = {
   setTitle: (title: string) => void;
   setBackground: (background: BoardBackground) => void;
   setStyle: (style: BoardStyle) => void;
+  /** Change the board's colour, pattern, typeface and drawing style together (one undo step). */
+  setLook: (look: { background?: BoardBackground; boardColor?: string; font?: FontKind; style?: BoardStyle }) => void;
   setTool: (tool: Tool) => void;
   setShapeKind: (shape: ShapeKind) => void;
   setPen: (opts: { color?: Color; size?: Size }) => void;
@@ -265,6 +274,10 @@ function cleanData(d: ItemData): ItemData {
   if (d.locked) out.locked = true;
   if (d.group) out.group = d.group;
   if (d.fill && d.fill !== "solid") out.fill = d.fill;
+  if (d.hex) out.hex = d.hex;
+  if (d.textColor) out.textColor = d.textColor;
+  if (d.font) out.font = d.font;
+  if (d.effect && d.effect !== "none") out.effect = d.effect;
   return out;
 }
 
@@ -288,13 +301,22 @@ export function cleanEdge(e: LinkEdge): LinkEdge {
     type: "link",
     source: e.source,
     target: e.target,
-    data: { label: d.label, curve: d.curve, arrow: d.arrow, dash: d.dash },
+    data: {
+      label: d.label,
+      curve: d.curve,
+      arrow: d.arrow,
+      dash: d.dash,
+      ...(d.color ? { color: d.color } : {}),
+      ...(d.width && d.width !== 2 ? { width: d.width } : {}),
+      ...(d.head && d.head !== "arrow" ? { head: d.head } : {}),
+      ...(d.motion && d.motion !== "none" ? { motion: d.motion } : {}),
+    },
   };
 }
 
 /** One undo step: the board's content plus its name and look. */
-const serialize = (s: Pick<BoardState, "nodes" | "edges" | "title" | "background" | "style">) =>
-  JSON.stringify({ n: s.nodes.map(cleanNode), e: s.edges.map(cleanEdge), t: s.title, b: s.background, st: s.style });
+const serialize = (s: Pick<BoardState, "nodes" | "edges" | "title" | "background" | "style" | "boardColor" | "font">) =>
+  JSON.stringify({ n: s.nodes.map(cleanNode), e: s.edges.map(cleanEdge), t: s.title, b: s.background, st: s.style, c: s.boardColor, f: s.font });
 
 export const defaultLinkData = (style?: LinkStyle): LinkData => ({
   label: "",
@@ -391,12 +413,14 @@ export function createBoardStore() {
     };
 
     const restore = (entry: string) => {
-      const { n, e, t, b, st } = JSON.parse(entry) as {
+      const { n, e, t, b, st, c, f } = JSON.parse(entry) as {
         n: BoardNode[];
         e: LinkEdge[];
         t?: string;
         b?: BoardBackground;
         st?: BoardStyle;
+        c?: string;
+        f?: FontKind;
       };
       // Reuse known sizes so restored items don't blink while they are re-measured.
       const sizes = new Map(get().nodes.map((x) => [x.id, x.measured]));
@@ -407,6 +431,8 @@ export function createBoardStore() {
         title: t ?? s.title,
         background: b ?? s.background,
         style: st ?? s.style,
+        boardColor: c ?? s.boardColor,
+        font: f ?? s.font,
         editingId: null,
         editingLabelId: null,
       }));
@@ -435,6 +461,8 @@ export function createBoardStore() {
       pinned: false,
       background: "dots",
       style: "clean",
+      boardColor: "default",
+      font: "sans",
       nodes: [],
       edges: [],
       viewport: null,
@@ -611,6 +639,8 @@ export function createBoardStore() {
           pinned: doc.pinned,
           background: doc.background,
           style: doc.style,
+          boardColor: doc.boardColor ?? "default",
+          font: doc.font ?? "sans",
           viewport: doc.viewport,
           nodes: withFramesFirst(doc.nodes.map(decorate)),
           edges: doc.edges,
@@ -626,6 +656,7 @@ export function createBoardStore() {
       setTitle: (title) => record(() => set({ title })),
       setBackground: (background) => record(() => set({ background })),
       setStyle: (style) => record(() => set({ style })),
+      setLook: (look) => record(() => set(Object.fromEntries(Object.entries(look).filter(([, v]) => v !== undefined)))),
       setTool: (tool) => {
         get().stopEditing();
         set({ tool });
@@ -707,7 +738,7 @@ export function createBoardStore() {
 
       setText: (id, text) =>
         set((s) => ({ nodes: s.nodes.map((n) => (n.id === id ? { ...n, data: { ...n.data, text } } : n)) })),
-      setColor: (ids, color) => updateData(ids, () => ({ color })),
+      setColor: (ids, color) => updateData(ids, () => ({ color, hex: undefined })),
       setSize: (ids, size) => updateData(ids, () => ({ size })),
       setShape: (ids, shape) => updateData(ids, (n) => (n.type === "shape" ? { shape } : null)),
       styleItems: (ids, patch, only) => updateData(ids, (n) => (!only || only.has(n.type) ? patch : null)),
@@ -903,7 +934,8 @@ export function createBoardStore() {
           })),
         );
         // New links copy the look of the last link you styled.
-        const { label: _label, ...style } = patch;
+        // (Movement is for emphasising one line, so new lines don't pick it up.)
+        const { label: _label, motion: _motion, ...style } = patch;
         if (Object.keys(style).length) set((s) => ({ linkStyle: { ...s.linkStyle, ...style } }));
       },
 

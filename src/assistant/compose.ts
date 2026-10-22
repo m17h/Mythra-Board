@@ -7,9 +7,18 @@
  * Laying out happens in two steps: `plan` turns the description into items (with widths
  * chosen), then, once the items' real heights are known, `arrange` positions everything.
  */
+import { asPaint, isHex } from "../look";
 import {
   ALIGNS,
   COLORS,
+  EFFECTS,
+  FONTS,
+  LINK_DASHES,
+  LINK_HEADS,
+  LINK_MOTIONS,
+  LINK_WIDTHS,
+  type Effect,
+  type FontKind,
   FILLS,
   OUTLINE_STYLES,
   OUTLINE_WIDTHS,
@@ -34,11 +43,15 @@ import {
 export type ItemKind = "note" | "text" | "shape" | "board" | "link";
 
 export type Look = {
-  color?: Color;
+  /** A palette colour or any #rrggbb. */
+  color?: string;
   fill?: Fill;
   outline?: OutlineWidth;
-  outline_color?: Color;
+  outline_color?: string;
   outline_style?: OutlineStyle;
+  text_color?: string;
+  font?: FontKind;
+  effect?: Effect;
 };
 
 export type ItemSpec = Look & {
@@ -105,6 +118,10 @@ export type LinkSpec = {
   curve?: LinkData["curve"];
   arrow?: LinkData["arrow"];
   dash?: LinkData["dash"];
+  color?: string;
+  width?: number | "thin" | "normal" | "thick";
+  head?: LinkData["head"];
+  motion?: LinkData["motion"];
 };
 
 // ---------- The plan: items to create and how they're arranged ----------
@@ -166,19 +183,29 @@ const num = (v: unknown, min: number, max: number): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : undefined;
 const str = (v: unknown, max = 4000): string => (typeof v === "string" ? v.slice(0, max) : "");
 
-/** Colour, fill and outline settings, checked. */
+/** Colour, fill, outline, text colour, typeface and effect settings, checked. */
 export function lookData(spec: Look): Partial<ItemData> {
   const d: Partial<ItemData> = {};
   const color = oneOf(COLORS, spec.color);
   if (color) d.color = color;
+  else if (isHex(spec.color)) {
+    d.color = "plain";
+    d.hex = spec.color.toLowerCase();
+  }
   const fill = oneOf(FILLS, spec.fill);
   if (fill) d.fill = fill;
   const outline = OUTLINE_WIDTHS.find((w) => w === spec.outline);
   if (outline !== undefined) d.outline = outline;
-  const oc = oneOf(COLORS, spec.outline_color);
+  const oc = asPaint(spec.outline_color);
   if (oc) d.outlineColor = oc;
   const os = oneOf(OUTLINE_STYLES, spec.outline_style);
   if (os) d.outlineStyle = os;
+  const tc = asPaint(spec.text_color);
+  if (tc) d.textColor = tc;
+  const font = oneOf(FONTS, spec.font);
+  if (font) d.font = font;
+  const effect = oneOf(EFFECTS, spec.effect);
+  if (effect && effect !== "none") d.effect = effect;
   return d;
 }
 
@@ -195,7 +222,8 @@ function naturalWidth(type: ItemType, data: Partial<ItemData>): number {
     case "text": {
       const style = data.textStyle ?? "body";
       const font = TEXT_FONT[style];
-      const wanted = longest * charWidth(font) + 24;
+      // Room to spare, so a wider typeface (chosen now or later) doesn't wrap a title.
+      const wanted = longest * charWidth(font) * 1.3 + 32;
       const max = style === "title" || style === "heading" ? 960 : 720;
       return Math.round(Math.min(max, Math.max(160, wanted)));
     }
@@ -356,8 +384,8 @@ export function plan(
   const mindmap = (spec: MindMapSpec): LNode | null => {
     if (!spec.root || typeof spec.root !== "object") return null;
     const curve = spec.curve ?? "curved";
-    const walk = (b: Branch, depth: number, inherited: Color | undefined, index: number): TreeNode => {
-      const color = b.color ?? (depth === 0 ? "purple" : depth === 1 ? BRANCH_COLORS[index % BRANCH_COLORS.length] : inherited);
+    const walk = (b: Branch, depth: number, inherited: string | undefined, index: number): TreeNode => {
+      const color: string | undefined = b.color ?? (depth === 0 ? "purple" : depth === 1 ? BRANCH_COLORS[index % BRANCH_COLORS.length] : inherited);
       const size: Size = b.size ?? (depth === 0 ? "l" : depth >= 2 ? "s" : "m");
       const item = add(planItem({ ...b, color, size }, newKey(), "note"));
       const children = (Array.isArray(b.children) ? b.children : []).filter((c) => c && typeof c === "object").slice(0, 12);
@@ -420,8 +448,16 @@ export function linkData(l: Partial<LinkSpec>, defaults: Partial<LinkData> = {})
   if (curve) d.curve = curve;
   const arrow = oneOf(["none", "end", "both"] as const, l.arrow);
   if (arrow) d.arrow = arrow;
-  const dash = oneOf(["solid", "dashed"] as const, l.dash);
+  const dash = oneOf(LINK_DASHES, l.dash);
   if (dash) d.dash = dash;
+  const color = asPaint(l.color);
+  if (color) d.color = color;
+  const width = typeof l.width === "string" ? ({ thin: 1, normal: 2, thick: 3 } as const)[l.width as "thin"] : LINK_WIDTHS.find((w) => w === l.width);
+  if (width) d.width = width;
+  const head = oneOf(LINK_HEADS, l.head);
+  if (head) d.head = head;
+  const motion = oneOf(LINK_MOTIONS, l.motion);
+  if (motion) d.motion = motion === "none" ? undefined : motion;
   return d;
 }
 

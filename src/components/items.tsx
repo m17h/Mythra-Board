@@ -15,6 +15,7 @@ import { roughPath } from "../sketch";
 import { GlobeIcon, OpenIcon } from "./icons";
 import { BoxResizer, LinkHandles, TextEditor, WidthResizers } from "./itemParts";
 import RichText, { taskStats } from "./RichText";
+import { colorLook, paintCss } from "../look";
 
 const useEditing = (id: string) => useBoard((s) => s.editingId === id);
 
@@ -53,19 +54,26 @@ const cls = (...parts: (string | false | null | undefined)[]) => parts.filter(Bo
  */
 function look(type: ItemType, data: ItemData): { className: string; style: CSSProperties } {
   const width = data.outline ?? DEFAULT_OUTLINE[type];
+  const color = colorLook(data);
   const style = {
+    ...color.style,
     "--ow": `${width}px`,
     "--os": data.outlineStyle ?? "solid",
-    ...(data.outlineColor ? { "--oc": `var(--ink-${data.outlineColor})` } : {}),
+    ...(data.outlineColor ? { "--oc": paintCss(data.outlineColor) } : {}),
+    ...(data.textColor ? { "--tc": paintCss(data.textColor) } : {}),
   } as CSSProperties;
   return {
     className: cls(
+      color.className,
       width > 0 && "has-outline",
       data.outline !== undefined && "outline-set",
       data.outlineStyle === "dashed" && "is-dashed-outline",
       data.align && `align--${data.align}`,
       data.locked && "is-locked",
       data.fill && data.fill !== "solid" && `fill--${data.fill}`,
+      data.font && `font--${data.font}`,
+      data.textColor && "has-text-color",
+      data.effect && data.effect !== "none" && `effect--${data.effect}`,
     ),
     style,
   };
@@ -83,7 +91,6 @@ export const NoteItem = memo(function NoteItem({ id, type, data, selected, dragg
       className={cls(
         isText ? "textitem" : "note",
         isText && `ts--${textStyleOf(data)}`,
-        `color--${data.color}`,
         `size--${data.size}`,
         hasTitle && "has-title",
         hasTitle && (data.text || editing) && "has-body",
@@ -152,7 +159,6 @@ export const ShapeItem = memo(function ShapeItem({ id, data, selected, dragging 
       className={cls(
         "shape",
         `shape--${shape}`,
-        `color--${data.color}`,
         `size--${data.size}`,
         className,
         selected && "is-selected",
@@ -232,7 +238,7 @@ export const ImageItem = memo(function ImageItem({ id, data, selected, dragging 
 
   return (
     <div
-      className={cls("image", `color--${data.color}`, className, selected && "is-selected", dragging && "is-dragging", cropping && "is-cropping")}
+      className={cls("image", className, selected && "is-selected", dragging && "is-dragging", cropping && "is-cropping")}
       style={style}
       role="img"
       aria-label={describe("image", data)}
@@ -271,7 +277,7 @@ export const FileItem = memo(function FileItem({ id, data, selected, dragging }:
   const open = () => data.asset && void openAsset(data.asset, name).catch(() => notify("Couldn't open that file"));
   return (
     <div
-      className={cls("note", "linkcard", "filecard", `color--${data.color}`, className, selected && "is-selected", dragging && "is-dragging")}
+      className={cls("note", "linkcard", "filecard", className, selected && "is-selected", dragging && "is-dragging")}
       style={style}
       role="group"
       aria-label={describe("file", data)}
@@ -315,7 +321,7 @@ export const FrameItem = memo(function FrameItem({ id, data, selected }: NodePro
   const { className, style } = look("frame", data);
   return (
     <div
-      className={cls("frame", `color--${data.color}`, className, selected && "is-selected", editing && "is-editing", dropTarget && "is-drop-target")}
+      className={cls("frame", className, selected && "is-selected", editing && "is-editing", dropTarget && "is-drop-target")}
       style={style}
       role="group"
       aria-label={describe("frame", data)}
@@ -344,7 +350,7 @@ export const InkItem = memo(function InkItem({ data, selected, width, height }: 
   const path = useMemo(() => strokePath(data.points ?? [], data.size), [data.points, data.size]);
   const erasing = useBoard((s) => s.tool === "eraser");
   return (
-    <svg className={cls("ink", `color--${data.color}`, selected && "is-selected", erasing && "is-erasable", data.locked && "is-locked")} width={width} height={height} role="img" aria-label="Drawing">
+    <svg style={colorLook(data).style} className={cls("ink", colorLook(data).className, selected && "is-selected", erasing && "is-erasable", data.locked && "is-locked")} width={width} height={height} role="img" aria-label="Drawing">
       <path d={path} />
     </svg>
   );
@@ -357,7 +363,7 @@ export const LinkCardItem = memo(function LinkCardItem({ id, data, selected, dra
   const { className, style } = look("link", data);
   return (
     <div
-      className={cls("note", "linkcard", `color--${data.color}`, className, selected && "is-selected", editing && "is-editing", dragging && "is-dragging")}
+      className={cls("note", "linkcard", className, selected && "is-selected", editing && "is-editing", dragging && "is-dragging")}
       style={style}
       role="group"
       aria-label={describe("link", data)}
@@ -405,7 +411,7 @@ export const BoardCardItem = memo(function BoardCardItem({ id, data, selected, d
   const missing = loaded && !target;
   return (
     <div
-      className={cls("note", "boardcard", `color--${data.color}`, className, missing && "is-missing", selected && "is-selected", dragging && "is-dragging")}
+      className={cls("note", "boardcard", className, missing && "is-missing", selected && "is-selected", dragging && "is-dragging")}
       style={style}
       role="group"
       aria-label={describe("board", data)}
@@ -489,7 +495,8 @@ export const ArrowItem = memo(function ArrowItem({ id, data, selected, width, he
 
   return (
     <svg
-      className={cls("free-arrow", `color--${data.color}`, data.outlineStyle === "dashed" && "is-dashed", selected && "is-selected", data.locked && "is-locked")}
+      style={colorLook(data).style}
+      className={cls("free-arrow", colorLook(data).className, data.outlineStyle === "dashed" && "is-dashed", selected && "is-selected", data.locked && "is-locked")}
       role="img"
       aria-label={data.arrowHead === "none" ? "Line" : "Arrow"}
       width={width}

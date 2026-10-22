@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { boardLook } from "./look";
+import { useTheme } from "./theme";
 import { DuplicateIcon, FileIcon, MoreIcon, NewWindowIcon, SettingsIcon, PlusIcon, RenameIcon, SearchIcon, StarIcon, TrashIcon } from "./components/icons";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { markKeyHandled, onMenu } from "./menuEvents";
@@ -529,6 +531,8 @@ function BoardCard({
   onDelete: () => void;
   onTemplate: () => void;
 }) {
+  const { theme } = useTheme();
+  const look = boardLook(doc.boardColor, theme);
   // ⌘-click (Ctrl-click on Windows) opens the board in a new window.
   const openFrom = (e: React.MouseEvent) => {
     if ((e.metaKey || e.ctrlKey) && canOpenWindows()) void openWindow(doc.id);
@@ -536,7 +540,13 @@ function BoardCard({
   };
   return (
     <div className={`board-card${menuOpen ? " is-menu-open" : ""}`}>
-      <button type="button" className={`board-card__preview bg--${doc.background}`} onClick={openFrom} aria-label={`Open ${doc.title}`}>
+      <button
+        type="button"
+        className={`board-card__preview bg--${doc.background} scheme-${look.scheme} board-font--${doc.font ?? "sans"}`}
+        style={look.bg ? ({ "--bg": look.bg, "--dots": look.pattern, "--grid": look.pattern, backgroundColor: look.bg } as CSSProperties) : undefined}
+        onClick={openFrom}
+        aria-label={`Open ${doc.title}`}
+      >
         <Thumbnail nodes={doc.nodes} edges={doc.edges} />
       </button>
       <div className="board-card__meta">

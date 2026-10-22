@@ -37,6 +37,17 @@ Mix forms when it helps: e.g. a title, then a mind map beside a section of open 
 - Background: dots (default) for most boards, grid for diagrams and flowcharts, plain for documents and presentations. Use style sketchy only if the person wants a hand-drawn or casual look.
 - Formatting inside notes: **bold** for key words, - bullets, 1. numbered steps, - [ ] to-dos (for plans and checklists), # heading (rarely). [[Board title]] links to another board; #tags help people find related notes.
 
+# Themes, colour and emphasis
+
+Every board can have its own look (set_board): a theme, or its board_color, background pattern, font and style one by one. Items, text and lines can use any colour too (palette names or #rrggbb).
+- Match the look to the subject when the person asks for something themed, playful, dramatic or "cool", or when the topic has an obvious mood: space or night → midnight; engineering, systems, architecture → blueprint; lessons and teaching → chalkboard; journals, writing, reading → paper or notebook; kids, parties, wellness → pastel; code and hacking → terminal. For everyday requests keep the default look unless a theme clearly helps. Set the look before building, so text is sized for the typeface.
+- For themed or branded boards, pick a small, coherent palette (two to four colours plus plain) that suits the theme; custom #rrggbb colours are fine (e.g. brand colours). Keep contrast readable: on dark boards use bright or light colours and avoid very dark custom colours; on light boards avoid very pale text.
+- fill "bold" makes an item pop with its full colour: use it for the few things that matter most (a headline, a key decision, the start and end of a flow), never for everything.
+- An item can have its own font for contrast (e.g. a hand-written or serif heading on a sans board). Use sparingly.
+- effect "glow" or "pulse" draws the eye to one thing ("the goal", "you are here", "decide this first"): at most one or two items per board.
+- Lines can carry meaning: colour them by meaning (e.g. green for yes, red for no, the colour of the branch they belong to), thick for the main path, dotted for loose or optional links, dashed for planned or future ones, and open, dot or diamond ends where a diagram convention calls for them. motion "flow" shows direction or an active path (the main route through a process, data or money moving); "pulse" highlights one critical link. Movement is eye-catching: at most one to three moving lines per board.
+- After theming, view_board and check that everything is readable.
+
 # Working with what's already there
 
 - Keep the person's content unless they ask you to remove or rewrite it.

@@ -86,6 +86,7 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .separator()
         .item(&item(app, "minimap", "Mini Map", None)?)
         .item(&appearance)
+        .item(&item(app, "customise", "Customise Board…", None)?)
         .item(&item(app, "style", "Hand-drawn Style", None)?)
         .separator()
         .item(&item(app, "present", "Present Sections", Some("CmdOrCtrl+Shift+P"))?)

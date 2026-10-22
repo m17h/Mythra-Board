@@ -1,7 +1,5 @@
 import {
-  Background,
   ViewportPortal,
-  BackgroundVariant,
   ConnectionMode,
   MiniMap,
   ReactFlow,
@@ -11,7 +9,7 @@ import {
   type FinalConnectionState,
   type IsValidConnection,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import type { TrailStep } from "./App";
 import { useBoardCommands, type BoardActions } from "./boardCommands";
 import { CommandPalette, type Command } from "./components/CommandPalette";
@@ -25,6 +23,9 @@ import { saveAsTemplate } from "./templates";
 import { canOpenWindows, openWindow } from "./windows";
 import { chat, useChat } from "./assistant/run";
 import { AssistantPanel } from "./components/AssistantPanel";
+import BoardBackdrop from "./components/BoardBackdrop";
+import { BoardLookDialog } from "./components/BoardLookDialog";
+import { boardLook } from "./look";
 import { aiSupported } from "./ai";
 import { isMac, keyLabel } from "./platform";
 import { FindBar } from "./components/FindBar";
@@ -49,6 +50,7 @@ import { Dock } from "./components/Dock";
 import {
   BackIcon,
   SparkleIcon,
+  PaletteIcon,
   BoardLinkIcon,
   BoardsIcon,
   DuplicateIcon,
@@ -73,7 +75,7 @@ import { addFiles, FILE_EXTENSIONS } from "./images";
 import { rectOf } from "./layout";
 import { isTauri, onSaveNotice, type SaveStatus } from "./persistence";
 import { boardStore, pauseSnapping, setSnapZoom, useBoard } from "./store";
-import { BACKGROUNDS, DEFAULT_NOTE_WIDTH, type BoardBackground, type BoardNode, type Color, type LinkEdge } from "./types";
+import { DEFAULT_NOTE_WIDTH, type BoardNode, type Color, type LinkEdge } from "./types";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { useTheme } from "./theme";
 import { useDismiss, usePresence } from "./useDismiss";
@@ -90,9 +92,10 @@ const MINIMAP_COLORS: Record<Color, string> = {
   purple: "#c3b1f5",
   blue: "#9cc7f5",
   green: "#a5dcb0",
+  red: "#f19b9b",
+  teal: "#8fd6d0",
+  gray: "#b4b7bf",
 };
-
-const BACKGROUND_NAMES: Record<BoardBackground, string> = { dots: "Dots", grid: "Grid", plain: "Plain" };
 
 type Props = { status: SaveStatus; onHome: () => void; back: TrailStep | null; onBack: () => void };
 
@@ -114,9 +117,12 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
   );
   const tool = useBoard((s) => s.tool);
   const background = useBoard((s) => s.background);
+  const boardColor = useBoard((s) => s.boardColor);
+  const font = useBoard((s) => s.font);
   const connecting = useBoard((s) => s.connecting);
   const editingId = useBoard((s) => s.editingId);
   const [showHelp, setShowHelp] = useState(false);
+  const [lookOpen, setLookOpen] = useState(false);
   const [helpShown, helpLeaving] = usePresence(showHelp);
   const [showMap, setShowMap] = useState(false);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
@@ -270,6 +276,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           keywords: "sketchy rough excalidraw look",
           run: () => boardStore.getState().setStyle(boardStore.getState().style === "sketchy" ? "clean" : "sketchy"),
         },
+        { id: "board:look", group: "Board", label: "Customise board…", icon: <PaletteIcon />, keywords: "theme colour color background pattern font typeface style look blueprint chalkboard paper dark", run: () => setLookOpen(true) },
         { id: "board:history", group: "Board", label: "Version history…", icon: <HistoryIcon />, keywords: "restore undo backup", run: () => setHistoryOpen(true) },
         {
           id: "board:template",
@@ -302,6 +309,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
           history: () => setHistoryOpen(true),
           find: () => setFindOpen(true),
           palette: () => setPalette(true),
+          customise: () => setLookOpen(true),
           "ask-claude": () => chat.setState((c) => ({ open: !c.open })),
           "zoom-in": () => void rf.zoomIn({ duration: 150 }),
           "zoom-out": () => void rf.zoomOut({ duration: 150 }),
@@ -403,6 +411,10 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
     void addFiles(files, rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })).then((m) => m && setNotice(m));
   };
 
+  // The board's own colour (which may be dark or light whatever the app is set to) and typeface.
+  const look = boardLook(boardColor, theme);
+  // Hand-drawn boards write in handwriting unless they've been given another typeface.
+  const boardFont = font === "sans" && boardStyle === "sketchy" ? "hand" : font;
   const drawing = tool === "pen" || tool === "eraser" || tool === "shape" || tool === "frame" || tool === "arrow" || tool === "lasso";
 
   return (
@@ -508,17 +520,12 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         disableKeyboardA11y
         nodeDragThreshold={2}
         onlyRenderVisibleElements={nodes.length > 400}
-        colorMode={theme}
+        colorMode={look.scheme}
+        className={`scheme-${look.scheme} board-font--${boardFont}`}
+        style={look.bg ? ({ "--bg": look.bg, "--dots": look.pattern, "--grid": look.pattern } as CSSProperties) : undefined}
         attributionPosition="top-right"
       >
-        {background !== "plain" && (
-          <Background
-            variant={background === "grid" ? BackgroundVariant.Lines : BackgroundVariant.Dots}
-            gap={background === "grid" ? 32 : 24}
-            size={background === "grid" ? 1 : 1.4}
-            className="board-bg"
-          />
-        )}
+        <BoardBackdrop pattern={background} />
         <SelectionToolbar onMore={(x, y) => setMenu({ x, y, kind: "items" })} />
         <LinkToolbar />
         <FormatToolbar />
@@ -548,6 +555,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         onHistory={() => setHistoryOpen(true)}
         onPresent={present}
         onSettings={() => setSettingsOpen(true)}
+        onCustomise={() => setLookOpen(true)}
       />
       {findOpen && (
         <FindBar
@@ -618,6 +626,7 @@ export default function BoardView({ status, onHome, back, onBack }: Props) {
         </ToolButton>
       </div>
 
+      {lookOpen && <BoardLookDialog onClose={() => setLookOpen(false)} />}
       {helpShown && <HelpPanel leaving={helpLeaving} onClose={() => setShowHelp(false)} />}
       <AssistantPanel onOpenSettings={() => setSettingsOpen(true)} />
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
@@ -745,6 +754,7 @@ function TitleBar({
   onHistory,
   onPresent,
   onSettings,
+  onCustomise,
 }: {
   status: SaveStatus;
   onHome: () => void;
@@ -754,6 +764,7 @@ function TitleBar({
   onHistory: () => void;
   onPresent: () => void;
   onSettings: () => void;
+  onCustomise: () => void;
 }) {
   const title = useBoard((s) => s.title);
   const boardId = useBoard((s) => s.boardId);
@@ -763,9 +774,7 @@ function TitleBar({
   const linksRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useDismiss(linksRef, showLinks, useCallback(() => setShowLinks(false), []));
-  const background = useBoard((s) => s.background);
   const snapping = useBoard((s) => s.snapping);
-  const boardStyle = useBoard((s) => s.style);
   const [draft, setDraft] = useState<string | null>(null);
   const [showSaved, setShowSaved] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -861,35 +870,17 @@ function TitleBar({
               <div className="menu__label">Appearance</div>
               <ThemeSwitch labels />
               <div className="menu__sep" />
-              <div className="menu__label">Style</div>
-              <div className="segmented">
-                {(["clean", "sketchy"] as const).map((st) => (
-                  <button
-                    key={st}
-                    type="button"
-                    className={`segmented__item${boardStyle === st ? " is-active" : ""}`}
-                    onClick={() => boardStore.getState().setStyle(st)}
-                  >
-                    <span className={`style-sample style-sample--${st}`}>Aa</span>
-                    {st === "clean" ? "Clean" : "Hand-drawn"}
-                  </button>
-                ))}
-              </div>
-              <div className="menu__sep" />
-              <div className="menu__label">Background</div>
-              <div className="segmented">
-                {BACKGROUNDS.map((b) => (
-                  <button
-                    key={b}
-                    type="button"
-                    className={`segmented__item${background === b ? " is-active" : ""}`}
-                    onClick={() => boardStore.getState().setBackground(b)}
-                  >
-                    <span className={`bg-sample bg-sample--${b}`} />
-                    {BACKGROUND_NAMES[b]}
-                  </button>
-                ))}
-              </div>
+              <button
+                type="button"
+                className="menu__item"
+                onClick={() => {
+                  setMenu(false);
+                  onCustomise();
+                }}
+              >
+                <span>Customise board…</span>
+                <span className="menu__hint">Themes, colours, fonts</span>
+              </button>
               <div className="menu__sep" />
               <label className="menu__item menu__toggle">
                 <span>Snap to items</span>

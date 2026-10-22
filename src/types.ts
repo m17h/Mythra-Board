@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 
-export const COLORS = ["plain", "yellow", "orange", "pink", "purple", "blue", "green"] as const;
+export const COLORS = ["plain", "yellow", "orange", "red", "pink", "purple", "blue", "teal", "green", "gray"] as const;
 export type Color = (typeof COLORS)[number];
 
 export const SIZES = ["s", "m", "l"] as const;
@@ -25,13 +25,29 @@ export type OutlineStyle = (typeof OUTLINE_STYLES)[number];
 export const ITEM_TYPES = ["note", "text", "shape", "image", "frame", "ink", "link", "board", "arrow", "file"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
-export const BACKGROUNDS = ["dots", "grid", "plain"] as const;
+/** Patterns drawn on the board. */
+export const BACKGROUNDS = ["dots", "grid", "lines", "cross", "plain"] as const;
+
+/** Board colours. "default" follows the app's light or dark appearance; the rest keep their own look. */
+export const BOARD_COLORS = ["default", "paper", "sky", "mint", "blush", "sand", "slate", "midnight", "blueprint", "chalkboard", "charcoal"] as const;
+export type BoardColor = (typeof BOARD_COLORS)[number];
+
+/** Typefaces for a board or a single item. */
+export const FONTS = ["sans", "serif", "mono", "rounded", "hand"] as const;
+export type FontKind = (typeof FONTS)[number];
+
+/** Ways to make an item stand out. */
+export const EFFECTS = ["none", "glow", "pulse"] as const;
+export type Effect = (typeof EFFECTS)[number];
+
+/** A palette colour, or any colour as #rrggbb. */
+export type Paint = Color | `#${string}`;
 
 /** How a board is drawn: crisp, or hand-drawn with wobbly lines and handwriting. */
 export const BOARD_STYLES = ["clean", "sketchy"] as const;
 export type BoardStyle = (typeof BOARD_STYLES)[number];
 
-export const FILLS = ["solid", "light", "hatch", "none"] as const;
+export const FILLS = ["solid", "light", "bold", "hatch", "none"] as const;
 export type Fill = (typeof FILLS)[number];
 export type BoardBackground = (typeof BACKGROUNDS)[number];
 
@@ -56,7 +72,7 @@ export type ItemData = {
   align?: Align;
   /** Outline thickness; when unset, each type uses its own default. */
   outline?: OutlineWidth;
-  outlineColor?: Color;
+  outlineColor?: Paint;
   outlineStyle?: OutlineStyle;
   /** For board cards: the board they open. */
   boardId?: string;
@@ -79,19 +95,41 @@ export type ItemData = {
   fileSize?: number;
   /** For pictures: cropped to fill the frame, centred on this point (0–1 across and down). */
   crop?: [number, number];
+  /** Any fill colour (#rrggbb), used instead of the palette colour. */
+  hex?: string;
+  /** Text colour, when it shouldn't follow the item's colour. */
+  textColor?: Paint;
+  /** Typeface, when it shouldn't follow the board's. */
+  font?: FontKind;
+  /** A glow, or a gentle pulse, to make the item stand out. */
+  effect?: Effect;
 };
 
 export type BoardNode = Node<ItemData, ItemType>;
 
 export type LinkCurve = "curved" | "straight" | "elbow";
 export type LinkArrow = "none" | "end" | "both";
-export type LinkDash = "solid" | "dashed";
+export const LINK_DASHES = ["solid", "dashed", "dotted"] as const;
+export type LinkDash = (typeof LINK_DASHES)[number];
+/** Line thickness: thin, normal or thick. */
+export const LINK_WIDTHS = [1, 2, 3] as const;
+export type LinkWidth = (typeof LINK_WIDTHS)[number];
+/** The shape at a line's arrow end(s). */
+export const LINK_HEADS = ["arrow", "open", "dot", "diamond"] as const;
+export type LinkHead = (typeof LINK_HEADS)[number];
+/** Movement along a line, to draw the eye: dashes flowing along it, or a soft pulse. */
+export const LINK_MOTIONS = ["none", "flow", "pulse"] as const;
+export type LinkMotion = (typeof LINK_MOTIONS)[number];
 
 export type LinkData = {
   label: string;
   curve: LinkCurve;
   arrow: LinkArrow;
   dash: LinkDash;
+  color?: Paint;
+  width?: LinkWidth;
+  head?: LinkHead;
+  motion?: LinkMotion;
 };
 
 export type LinkEdge = Edge<LinkData, "link">;

@@ -1,5 +1,6 @@
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "@xyflow/react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { paintCss } from "../look";
 import { linkEnds, linkGeometry, type LinkGeometry } from "../linkPath";
 import { roughPath } from "../sketch";
 import { boardStore, defaultLinkData, useBoard } from "../store";
@@ -9,7 +10,10 @@ import type { LinkEdge } from "../types";
 export function useLinkGeometry(link: Pick<LinkEdge, "id" | "data">): LinkGeometry | null {
   const ends = useBoard((s) => linkEnds(s.nodes, s.edges).get(link.id));
   const d = link.data ?? defaultLinkData();
-  return useMemo(() => (ends ? linkGeometry(ends, d.curve, d.arrow) : null), [ends, d.curve, d.arrow]);
+  return useMemo(
+    () => (ends ? linkGeometry(ends, d.curve, d.arrow, d.head, d.width) : null),
+    [ends, d.curve, d.arrow, d.head, d.width],
+  );
 }
 
 function LinkLine({ id, data, selected }: EdgeProps<LinkEdge>) {
@@ -21,13 +25,27 @@ function LinkLine({ id, data, selected }: EdgeProps<LinkEdge>) {
   if (!geo || !drawn) return null;
 
   const d = data ?? defaultLinkData();
-  const className = `link${selected ? " is-selected" : ""}${d.dash === "dashed" ? " is-dashed" : ""}`;
+  const colored = !!d.color;
+  const className = [
+    "link",
+    selected && "is-selected",
+    d.dash === "dashed" && "is-dashed",
+    d.dash === "dotted" && "is-dotted",
+    colored && "has-color",
+    d.width && d.width !== 2 && `w-${d.width}`,
+    d.motion === "flow" && "motion--flow",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const style = colored ? ({ "--lc": paintCss(d.color!) } as CSSProperties) : undefined;
+  const headClass = ["link-head", d.head === "open" && "link-head--open", colored && "has-color", selected && "is-selected"].filter(Boolean).join(" ");
 
   return (
     <>
-      <BaseEdge path={drawn} className={className} interactionWidth={22} />
+      {d.motion === "pulse" && <path d={drawn} className="link-glow" style={style} />}
+      <BaseEdge path={drawn} className={className} style={style} interactionWidth={22} />
       {geo.heads.map((head, i) => (
-        <path key={i} d={head} className={`link-head${selected ? " is-selected" : ""}`} />
+        <path key={i} d={head} className={headClass} style={style} />
       ))}
       {(d.label || editingLabel) && (
         <EdgeLabelRenderer>

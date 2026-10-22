@@ -1,7 +1,8 @@
 import { getBezierPath, getSmoothStepPath, getStraightPath, Position } from "@xyflow/react";
 import {
-  arrowHead,
   borderPoint,
+  headInset,
+  headPath,
   center,
   isHorizontal,
   offset,
@@ -17,7 +18,7 @@ import {
   type Rect,
 } from "./geometry";
 import { rectOf } from "./layout";
-import type { BoardNode, LinkArrow, LinkCurve, LinkEdge } from "./types";
+import type { BoardNode, LinkArrow, LinkCurve, LinkEdge, LinkHead, LinkWidth } from "./types";
 
 /** Space between an arrow tip and the item it points at. */
 const TIP_GAP = 3;
@@ -52,25 +53,26 @@ function pathBetween(curve: LinkCurve, from: Anchor, to: Anchor, fromPoint: Poin
   return [path, x, y];
 }
 
-/** The drawn path, arrowheads and label position for a link between two anchors. */
-export function linkGeometry(ends: LinkEnds, curve: LinkCurve, arrow: LinkArrow): LinkGeometry {
+/** The drawn path, arrow ends and label position for a link between two anchors. */
+export function linkGeometry(ends: LinkEnds, curve: LinkCurve, arrow: LinkArrow, head: LinkHead = "arrow", width: LinkWidth = 2): LinkGeometry {
   const [sa, sb] = ends;
   // Direction each arrow points: into the item it touches.
   const intoB = curve === "straight" ? unit(sa, sb) : flip(sideNormal(sb.side));
   const intoA = curve === "straight" ? unit(sb, sa) : flip(sideNormal(sa.side));
+  const length = ARROW_LENGTH * (width === 3 ? 1.3 : width === 1 ? 0.85 : 1);
 
   const heads: string[] = [];
   let start: Point = sa;
   let end: Point = sb;
   if (arrow !== "none") {
     const tip = offset(sb, intoB, -TIP_GAP);
-    heads.push(arrowHead(tip, intoB, ARROW_LENGTH));
-    end = offset(tip, intoB, -(ARROW_LENGTH - 2));
+    heads.push(headPath(head, tip, intoB, length));
+    end = offset(tip, intoB, -headInset(head, length));
   }
   if (arrow === "both") {
     const tip = offset(sa, intoA, -TIP_GAP);
-    heads.push(arrowHead(tip, intoA, ARROW_LENGTH));
-    start = offset(tip, intoA, -(ARROW_LENGTH - 2));
+    heads.push(headPath(head, tip, intoA, length));
+    start = offset(tip, intoA, -headInset(head, length));
   }
   const [path, labelX, labelY] = pathBetween(curve, sa, sb, start, end, ends.step);
   return { path, heads, labelX, labelY };

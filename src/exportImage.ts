@@ -52,7 +52,9 @@ export async function renderCanvas(nodes: BoardNode[], edges: LinkEdge[], opts: 
   const scale = opts.maxSide
     ? Math.min(2, opts.maxSide / Math.max(width, height))
     : Math.max(0.5, Math.min(2, MAX_SIDE / Math.max(width, height)));
-  const background = getComputedStyle(document.body).backgroundColor;
+  // The board's own colour (it may differ from the app's), falling back to the app's.
+  const board = viewport.closest(".react-flow");
+  const background = (board && getComputedStyle(board).backgroundColor) || getComputedStyle(document.body).backgroundColor;
   const render = () =>
     domToCanvas(viewport, {
       width,

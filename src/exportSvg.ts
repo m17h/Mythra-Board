@@ -1,6 +1,7 @@
 import { bytesToBase64 } from "./boardFile";
 import { arrowHead, offset, rectsBounds, unit, type Rect } from "./geometry";
 import { strokePath } from "./ink";
+import { isHex, readableOn } from "./look";
 import { rectOf } from "./layout";
 import { computeLinkEnds, linkGeometry } from "./linkPath";
 import { boardIndex } from "./navigation";
@@ -10,6 +11,8 @@ import { SHAPE_DETAILS, SHAPE_PATHS } from "./shapes";
 import {
   DEFAULT_OUTLINE,
   textStyleOf,
+  type FontKind,
+  type Paint,
   type BoardNode,
   type Color,
   type LinkEdge,
@@ -29,7 +32,7 @@ const cropAlign = (crop?: [number, number]) => {
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const n2 = (v: number) => Math.round(v * 100) / 100;
 
-/** Colours resolved from the current theme. */
+/** Colours and typefaces resolved from the board (its own colour and light or dark set). */
 type Palette = {
   bg: string;
   text: string;
@@ -37,39 +40,70 @@ type Palette = {
   link: string;
   noteBorder: string;
   accent: string;
-  soft: (c: Color) => string;
-  strong: (c: Color) => string;
+  /** Fill and ink for a palette colour or #rrggbb. */
+  soft: (c: string) => string;
+  strong: (c: string) => string;
+  /** Text that reads on a bold fill of this colour. */
+  onStrong: (c: string) => string;
+  /** A text or line colour: a palette colour's ink, or the colour itself. */
+  paint: (c: Paint) => string;
+  /** The board's typeface, and each typeface by kind. */
   font: string;
+  fontOf: (kind: FontKind) => string;
+  /** Stop reading (call once the drawing is done). */
+  done: () => void;
 };
 
+/**
+ * Read colours and typefaces from inside the board, so they match what's on screen. A
+ * hidden probe stays attached while drawing, because custom colours are only met as items
+ * are drawn.
+ */
 function readPalette(root: Element): Palette {
   const probe = document.createElement("div");
-  probe.style.display = "none";
   root.appendChild(probe);
   const cache = new Map<string, string>();
-  const read = (cls: string, prop: string) => {
-    const key = `${cls}|${prop}`;
+  const ask = (key: string, setup: (el: HTMLElement) => void, read: (cs: CSSStyleDeclaration) => string) => {
     if (!cache.has(key)) {
-      probe.className = cls;
-      cache.set(key, getComputedStyle(probe).getPropertyValue(prop).trim());
+      probe.className = "";
+      probe.removeAttribute("style");
+      probe.style.display = "none";
+      setup(probe);
+      cache.set(key, read(getComputedStyle(probe)).trim());
     }
     return cache.get(key)!;
   };
-  const p: Palette = {
-    bg: read("", "--bg"),
-    text: read("", "--text"),
-    muted: read("", "--muted"),
-    link: read("", "--link"),
-    noteBorder: read("", "--note-border"),
-    accent: read("", "--accent"),
-    soft: (c) => read(`color--${c}`, "--soft"),
-    strong: (c) => read(`color--${c}`, "--strong"),
-    font: getComputedStyle(document.body).fontFamily.replace(/"/g, "'"),
+  const prop = (name: string) => ask(`prop|${name}`, () => {}, (cs) => cs.getPropertyValue(name));
+  // Resolve through `color`, so mixes (used for custom colours) come out as plain rgb.
+  const colorOf = (c: string, v: "--soft" | "--strong" | "--on-strong") =>
+    ask(
+      `${c}|${v}`,
+      (el) => {
+        if (isHex(c)) {
+          el.className = `color--custom${v === "--on-strong" ? " fill--bold" : ""}`;
+          el.style.setProperty("--c", c);
+          el.style.setProperty("--on-c", readableOn(c));
+        } else el.className = `color--${c}${v === "--on-strong" ? " fill--bold" : ""}`;
+        el.style.color = `var(${v})`;
+      },
+      (cs) => cs.color,
+    );
+  const family = (value: string) => ask(`font|${value}`, (el) => (el.style.fontFamily = value), (cs) => cs.fontFamily.replace(/"/g, "'"));
+  return {
+    bg: prop("--bg"),
+    text: prop("--text"),
+    muted: prop("--muted"),
+    link: prop("--link"),
+    noteBorder: prop("--note-border"),
+    accent: prop("--accent"),
+    soft: (c) => colorOf(c, "--soft"),
+    strong: (c) => colorOf(c, "--strong"),
+    onStrong: (c) => colorOf(c, "--on-strong"),
+    paint: (c) => (isHex(c) ? c : prop(`--ink-${c}`)),
+    font: family("var(--board-font)") || getComputedStyle(document.body).fontFamily.replace(/"/g, "'"),
+    fontOf: (kind) => family(`var(--font-${kind})`),
+    done: () => probe.remove(),
   };
-  // Read everything now, while the probe is attached.
-  for (const c of ["plain", "yellow", "orange", "pink", "purple", "blue", "green"] as Color[]) (p.soft(c), p.strong(c));
-  probe.remove();
-  return p;
 }
 
 /** Scale one of the 100×100 shape outlines to a real size and position. */
@@ -144,7 +178,7 @@ export function plainLines(text: string, size: number, weight: number): Line[] {
 /** Text drawn with the same font as the app, wrapped to a width. */
 class TextLayout {
   private ctx = document.createElement("canvas").getContext("2d")!;
-  constructor(private family: string) {}
+  constructor(public family: string) {}
 
   wrap(line: Line, width: number): string[] {
     this.ctx.font = `${line.weight} ${line.size}px ${this.family}`;
@@ -224,8 +258,24 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
   if (opts.background) parts.push(`<rect x="${vb.x}" y="${vb.y}" width="${vb.width}" height="${vb.height}" fill="${p.bg}"/>`);
 
   const drawItem = async (n: BoardNode) => {
+    const family = n.data.font ? p.fontOf(n.data.font) : null;
+    const start = parts.length;
+    if (family) layout.family = family;
+    await drawBody(n);
+    if (family) {
+      parts.splice(start, 0, `<g font-family="${esc(family)}">`);
+      parts.push("</g>");
+      layout.family = p.font;
+    }
+  };
+
+  const drawBody = async (n: BoardNode) => {
     const r = rectOf(n);
-    const d = n.data;
+    // A custom colour stands in for the palette colour everywhere below.
+    const d = { ...n.data, color: (n.data.hex ?? n.data.color) as Color };
+    const bold = d.fill === "bold";
+    const tc = d.textColor ? p.paint(d.textColor) : bold ? p.onStrong(d.color) : p.text;
+    const fillOf = (c: Color) => (bold ? p.strong(c) : p.soft(c));
     switch (n.type) {
       case "frame": {
         parts.push(
@@ -276,7 +326,7 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
       }
       case "shape": {
         const shape = d.shape ?? "rect";
-        const fill = p.soft(d.color);
+        const fill = fillOf(d.color);
         const stroke = outlineAttrs(n, p, "none");
         if (shape === "rect") parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="14" fill="${fill}" ${stroke}/>`);
         else if (shape === "ellipse")
@@ -288,13 +338,13 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
         if (d.text) {
           const size = NOTE_SIZE[d.size];
           const inset = { x: r.x + r.width * 0.12, y: r.y + r.height * 0.12, width: r.width * 0.76, height: r.height * 0.76 };
-          parts.push(layout.block(plainLines(d.text, size, d.size === "l" ? 650 : 400), inset, { align: d.align ?? "center", color: p.text, middle: true }).svg);
+          parts.push(layout.block(plainLines(d.text, size, d.size === "l" ? 650 : 400), inset, { align: d.align ?? "center", color: tc, middle: true }).svg);
         }
         return;
       }
       case "text": {
         const style = TEXT_STYLE[textStyleOf(d)];
-        const color = d.color === "plain" ? (textStyleOf(d) === "caption" ? p.muted : p.text) : p.strong(d.color);
+        const color = d.textColor ? tc : d.color === "plain" ? (textStyleOf(d) === "caption" ? p.muted : p.text) : p.strong(d.color);
         const padX = (d.outline ?? 0) > 0 ? 12 : 6;
         const padY = (d.outline ?? 0) > 0 ? 8 : 4;
         if ((d.outline ?? 0) > 0) parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="10" fill="none" ${outlineAttrs(n, p, "none")}/>`);
@@ -309,11 +359,11 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
       }
       default: {
         // Notes, link cards and board cards share the card look.
-        parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="12" fill="${p.soft(d.color)}" ${outlineAttrs(n, p, p.noteBorder)}/>`);
+        parts.push(`<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" rx="12" fill="${fillOf(d.color)}" ${outlineAttrs(n, p, p.noteBorder)}/>`);
         const inner = { x: r.x + 15, y: r.y + 12, width: r.width - 30, height: r.height - 24 };
         if (n.type === "file") {
           const size = d.fileSize ? formatBytes(d.fileSize) : "File";
-          parts.push(layout.block([{ text: d.text || "File", size: 14.5, weight: 650 }, { text: size, size: 12, weight: 400, color: p.muted }], inner, { color: p.text, middle: true }).svg);
+          parts.push(layout.block([{ text: d.text || "File", size: 14.5, weight: 650 }, { text: size, size: 12, weight: 400, color: p.muted }], inner, { color: tc, middle: true }).svg);
           return;
         }
         if (n.type === "link" || n.type === "board") {
@@ -321,7 +371,7 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
           const title = n.type === "board" ? (target?.title ?? d.text) : d.text || d.url?.replace(/^https?:\/\/(www\.)?/, "").split("/")[0] || "";
           const sub = n.type === "board" ? `${target?.nodes.length ?? 0} items` : (d.url ?? "").replace(/^https?:\/\/(www\.)?/, "");
           parts.push(
-            layout.block([{ text: title, size: 14.5, weight: 650 }, { text: sub, size: 12, weight: 400, color: p.muted }], inner, { color: p.text, middle: true }).svg,
+            layout.block([{ text: title, size: 14.5, weight: 650 }, { text: sub, size: 12, weight: 400, color: p.muted }], inner, { color: tc, middle: true }).svg,
           );
           return;
         }
@@ -330,7 +380,7 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
           const t = layout.block([{ text: d.title || "Untitled", size: d.size === "l" ? 22 : d.size === "s" ? 14 : 16.5, weight: 700 }], { ...inner, y: top }, {
             align: d.align,
             lineHeight: 1.3,
-            color: p.text,
+            color: tc,
           });
           parts.push(t.svg);
           top += t.height + 8;
@@ -340,7 +390,7 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
           }
         }
         const size = d.title !== undefined && d.size === "l" ? 15 : NOTE_SIZE[d.size];
-        parts.push(layout.block(plainLines(d.text, size, d.size === "l" && d.title === undefined ? 650 : 400), { ...inner, y: top }, { align: d.align, color: p.text }).svg);
+        parts.push(layout.block(plainLines(d.text, size, d.size === "l" && d.title === undefined ? 650 : 400), { ...inner, y: top }, { align: d.align, color: tc }).svg);
         // The to-do progress bar along the bottom, as on screen.
         const tasks = [...d.text.matchAll(/^\s*[-*] \[( |x|X)\]/gm)];
         if (tasks.length) {
@@ -363,9 +413,17 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
   for (const e of links) {
     const end = ends.get(e.id);
     if (!end || !e.data) continue;
-    const g = linkGeometry(end, e.data.curve, e.data.arrow);
-    parts.push(`<path d="${g.path}" fill="none" stroke="${p.link}" stroke-width="2"${e.data.dash === "dashed" ? ' stroke-dasharray="7 6"' : ""}/>`);
-    for (const h of g.heads) parts.push(`<path d="${h}" fill="${p.link}"/>`);
+    const g = linkGeometry(end, e.data.curve, e.data.arrow, e.data.head, e.data.width);
+    const color = e.data.color ? p.paint(e.data.color) : p.link;
+    const width = { 1: 1.25, 2: 2, 3: 3.5 }[e.data.width ?? 2];
+    const dash = e.data.dash === "dashed" ? ' stroke-dasharray="7 6"' : e.data.dash === "dotted" ? ' stroke-dasharray="0.5 6" stroke-linecap="round"' : "";
+    parts.push(`<path d="${g.path}" fill="none" stroke="${color}" stroke-width="${width}"${dash}/>`);
+    for (const h of g.heads)
+      parts.push(
+        e.data.head === "open"
+          ? `<path d="${h}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`
+          : `<path d="${h}" fill="${color}"/>`,
+      );
     if (e.data.label) {
       const w = e.data.label.length * 7 + 20;
       parts.push(
@@ -376,6 +434,7 @@ export async function boardSvg(nodes: BoardNode[], edges: LinkEdge[], root: Elem
   }
   for (const n of nodes) if (n.type !== "frame") await drawItem(n);
 
+  p.done();
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb.x} ${vb.y} ${vb.width} ${vb.height}" width="${Math.round(vb.width)}" height="${Math.round(vb.height)}" font-family="${esc(p.font)}">`,
     defs.length ? `<defs>${defs.join("")}</defs>` : "",

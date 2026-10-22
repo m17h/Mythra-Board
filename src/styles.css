@@ -1,4 +1,5 @@
-:root {
+:root,
+.scheme-light {
   /* Motion: things arrive quickly and settle gently, with a touch of bounce for windows. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
@@ -33,6 +34,9 @@
   --note-purple: #ebe4ff;
   --note-blue: #dbeaff;
   --note-green: #d9f4e1;
+  --note-red: #ffdcdc;
+  --note-teal: #d2f1ee;
+  --note-gray: #e9eaee;
   --note-border: rgba(20, 20, 40, 0.07);
 
   /* Strong colours for text, pen strokes and outlines. */
@@ -43,12 +47,20 @@
   --ink-purple: #6741d9;
   --ink-blue: #1c7ed6;
   --ink-green: #2b8a3e;
+  --ink-red: #e03131;
+  --ink-teal: #0c8599;
+  --ink-gray: #5c6070;
+  /* Text on a bold (strong) fill, and how custom colours are mixed. */
+  --on-strong: #ffffff;
+  --custom-soft: 24%;
+  --custom-strong: 90%;
 
   color-scheme: light;
 }
 
 /* Dark mode: a medium charcoal gray rather than black. */
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+.scheme-dark {
   --bg: #2f3035;
   --dots: #4a4b53;
   --grid: #393a40;
@@ -75,6 +87,9 @@
   --note-purple: #4a426c;
   --note-blue: #364b65;
   --note-green: #375141;
+  --note-red: #5a3a3d;
+  --note-teal: #2e5250;
+  --note-gray: #4a4c54;
   --note-border: rgba(255, 255, 255, 0.08);
 
   --ink-plain: #ececf0;
@@ -84,6 +99,12 @@
   --ink-purple: #a48bff;
   --ink-blue: #6bb6ff;
   --ink-green: #6ad384;
+  --ink-red: #ff7b7b;
+  --ink-teal: #5fd3c8;
+  --ink-gray: #b8bac4;
+  --on-strong: #1d1d22;
+  --custom-soft: 34%;
+  --custom-strong: 72%;
 
   color-scheme: dark;
 }
@@ -95,6 +116,14 @@
 .color--purple { --soft: var(--note-purple); --strong: var(--ink-purple); }
 .color--blue { --soft: var(--note-blue); --strong: var(--ink-blue); }
 .color--green { --soft: var(--note-green); --strong: var(--ink-green); }
+.color--red { --soft: var(--note-red); --strong: var(--ink-red); }
+.color--teal { --soft: var(--note-teal); --strong: var(--ink-teal); }
+.color--gray { --soft: var(--note-gray); --strong: var(--ink-gray); }
+/* Any colour: tinted for fills, deepened (or lightened on dark boards) for ink. */
+.color--custom {
+  --soft: color-mix(in srgb, var(--c) var(--custom-soft), var(--note-plain));
+  --strong: color-mix(in srgb, var(--c) var(--custom-strong), var(--ink-plain));
+}
 
 * {
   box-sizing: border-box;
@@ -209,7 +238,6 @@ kbd {
   background: transparent;
   color: inherit;
   font: inherit;
-  font-family: var(--font);
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
@@ -2847,6 +2875,40 @@ svg.is-locked::before {
 .fill--hatch.color--purple .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-purple); }
 .fill--hatch.color--blue .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-blue); }
 .fill--hatch.color--green .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-green); }
+.fill--hatch.color--red .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-red); }
+.fill--hatch.color--teal .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-teal); }
+.fill--hatch.color--gray .shape__outline path:not(.shape__detail) { fill: url(#mb-hatch-gray); }
+.fill--hatch.color--custom .shape__outline path:not(.shape__detail) { fill: var(--soft); }
+
+/* Bold: the full colour, with text that reads on it. */
+.note.fill--bold,
+.shape--rect.fill--bold,
+.shape--ellipse.fill--bold,
+.frame.fill--bold {
+  background: var(--strong);
+  color: var(--on-strong);
+  border-color: transparent;
+}
+.color--custom.fill--bold {
+  --strong: var(--c);
+  --on-strong: var(--on-c);
+}
+.fill--bold .shape__outline path:not(.shape__detail) {
+  fill: var(--strong);
+}
+.shape.fill--bold,
+.fill--bold .item-text,
+.fill--bold .note__title,
+.fill--bold .rt-marker {
+  color: var(--on-strong);
+}
+.frame.fill--bold {
+  background: color-mix(in srgb, var(--strong) 82%, transparent);
+}
+.color--plain.fill--bold {
+  --strong: var(--ink-plain);
+  --on-strong: var(--note-plain);
+}
 
 .fill-sample {
   width: 26px;
@@ -2874,13 +2936,7 @@ svg.is-locked::before {
 .item-sketch {
   display: none;
 }
-.style-sketchy .react-flow__node,
-.style-sketchy .link-label {
-  font-family: "Kalam", var(--font);
-}
-.style-sketchy .item-editor {
-  font-family: "Kalam", var(--font);
-}
+
 /* Swap crisp borders for a wobbly hand-drawn line on its own layer, so text stays sharp. */
 .style-sketchy .note,
 .style-sketchy .shape--rect,
@@ -3849,4 +3905,348 @@ svg.is-locked::before {
   background: var(--surface-solid);
   border-top: 1px solid var(--border);
   z-index: 1;
+}
+
+/* ---------- Typefaces ---------- */
+.react-flow {
+  --font-sans: var(--font);
+  --font-serif: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-rounded: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", var(--font);
+  --font-hand: "Kalam", "Comic Sans MS", cursive;
+  --board-font: var(--font-sans);
+}
+.board-font--serif { --board-font: var(--font-serif); }
+.board-font--mono { --board-font: var(--font-mono); }
+.board-font--rounded { --board-font: var(--font-rounded); }
+.board-font--hand { --board-font: var(--font-hand); }
+.react-flow__node,
+.link-label {
+  font-family: var(--board-font);
+}
+.react-flow__node .font--sans { font-family: var(--font-sans); }
+.react-flow__node .font--serif { font-family: var(--font-serif); }
+.react-flow__node .font--mono { font-family: var(--font-mono); }
+.react-flow__node .font--rounded { font-family: var(--font-rounded); }
+.react-flow__node .font--hand { font-family: var(--font-hand); }
+.font-sample--sans { font-family: var(--font); }
+.font-sample--serif { font-family: ui-serif, "New York", Georgia, serif; }
+.font-sample--mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.font-sample--rounded { font-family: ui-rounded, "SF Pro Rounded", var(--font); }
+.font-sample--hand { font-family: "Kalam", cursive; }
+
+/* ---------- Text colour ---------- */
+.has-text-color,
+.has-text-color .item-text,
+.has-text-color .note__title,
+.has-text-color.frame .frame__title {
+  color: var(--tc) !important;
+}
+
+/* ---------- Standing out ---------- */
+.effect--glow,
+.effect--pulse {
+  --glow: var(--strong);
+}
+.color--plain.effect--glow,
+.color--plain.effect--pulse {
+  --glow: var(--accent);
+}
+.effect--glow {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--glow) 70%, transparent)) drop-shadow(0 0 16px color-mix(in srgb, var(--glow) 38%, transparent));
+}
+.effect--pulse {
+  animation: item-pulse 2.2s ease-in-out infinite;
+}
+@keyframes item-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px color-mix(in srgb, var(--glow) 35%, transparent));
+  }
+  50% {
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--glow) 80%, transparent)) drop-shadow(0 0 20px color-mix(in srgb, var(--glow) 45%, transparent));
+  }
+}
+
+/* ---------- Lines ---------- */
+.react-flow__edge-path.link.has-color {
+  stroke: var(--lc);
+}
+.link-head.has-color {
+  fill: var(--lc);
+}
+.link-head--open {
+  fill: none !important;
+  stroke: var(--lc, var(--link));
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.react-flow__edge:hover .link-head--open {
+  stroke: var(--lc, var(--link-hover));
+}
+.link-head--open.is-selected {
+  stroke: var(--accent);
+}
+.react-flow__edge-path.link.w-1 { stroke-width: 1.25; }
+.react-flow__edge-path.link.w-3 { stroke-width: 3.5; }
+.react-flow__edge-path.link.is-dotted {
+  stroke-dasharray: 0.5 6;
+  stroke-linecap: round;
+}
+.react-flow__edge-path.link.w-3.is-dotted { stroke-dasharray: 0.5 9; }
+.react-flow__edge-path.link.w-3.is-dashed { stroke-dasharray: 10 8; }
+/* Flow: dashes travel along the line, from where it starts to where it points. */
+.react-flow__edge-path.link.motion--flow {
+  stroke-dasharray: 8 7;
+  animation: link-flow 0.9s linear infinite;
+}
+.react-flow__edge-path.link.motion--flow.is-dotted {
+  stroke-dasharray: 0.5 7.5;
+  stroke-linecap: round;
+  animation-duration: 0.7s;
+}
+@keyframes link-flow {
+  to {
+    stroke-dashoffset: -15;
+  }
+}
+/* Pulse: a soft glow breathing underneath the line. */
+.link-glow {
+  fill: none;
+  stroke: var(--lc, var(--accent));
+  stroke-width: 9;
+  stroke-linecap: round;
+  opacity: 0.12;
+  filter: blur(2px);
+  animation: link-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes link-pulse {
+  50% {
+    opacity: 0.45;
+    stroke-width: 13;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge-path.link.motion--flow,
+  .link-glow,
+  .effect--pulse {
+    animation: none;
+  }
+}
+/* Pictures and exports catch movement mid-way; keep them still and tidy instead. */
+.is-exporting .react-flow__edge-path.link.motion--flow,
+.is-exporting .link-glow,
+.is-exporting .effect--pulse {
+  animation: none !important;
+}
+.board-ruled line {
+  stroke: var(--grid);
+  stroke-width: 1;
+}
+
+/* ---------- Customising: controls ---------- */
+.popover .swatches {
+  flex-wrap: wrap;
+  max-width: 270px;
+}
+.swatch--custom {
+  position: relative;
+  display: inline-block;
+  background: conic-gradient(#ff5f6d, #ffc371, #f9f871, #55d88b, #3fb7f5, #7c5cff, #ff5fb4, #ff5f6d);
+  border-color: transparent;
+  overflow: hidden;
+}
+.swatch--custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+.line-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--lc, var(--link));
+}
+.line-width-sample {
+  display: inline-block;
+  width: 18px;
+  border-radius: 2px;
+  background: currentColor;
+  margin-right: 2px;
+}
+.line-sample--dotted {
+  border-top-style: dotted;
+}
+.head-glyph line,
+.head-glyph path.is-open {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+.head-glyph path:not(.is-open) {
+  fill: currentColor;
+}
+.font-sample {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+}
+.font-picker .segmented__item {
+  min-width: 36px;
+}
+.menu__hint {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.bg-sample--lines {
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px);
+  background-size: 100% 8px;
+}
+.bg-sample--cross {
+  background-image:
+    linear-gradient(var(--grid), var(--grid)),
+    linear-gradient(var(--grid), var(--grid));
+  background-size:
+    5px 1px,
+    1px 5px;
+  background-position:
+    2px 4px,
+    4px 2px;
+  background-repeat: repeat;
+  background-color: var(--bg);
+  -webkit-mask: none;
+}
+
+/* ---------- Customise board window ---------- */
+.board-look {
+  width: min(600px, calc(100vw - 40px));
+}
+.look-themes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.look-theme {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+}
+.look-theme .look-swatch {
+  height: 64px;
+  margin-bottom: 6px;
+  transition: transform 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
+}
+.look-theme:hover .look-swatch {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.look-theme.is-active .look-swatch {
+  box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 4px var(--accent);
+}
+.look-theme__name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.look-theme__desc {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.look-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background-color: var(--bg);
+  color: var(--text);
+}
+.look-swatch.bg-sample--dots {
+  background-image: radial-gradient(var(--dots) 1.2px, transparent 1.4px);
+  background-size: 10px 10px;
+}
+.look-swatch.bg-sample--grid {
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 12px 12px;
+}
+.look-swatch.bg-sample--lines {
+  background-image: linear-gradient(transparent 11px, var(--grid) 11px, var(--grid) 12px);
+  background-size: 100% 12px;
+}
+.look-swatch.bg-sample--cross {
+  background-image: radial-gradient(var(--grid) 1.6px, transparent 1.8px);
+  background-size: 14px 14px;
+}
+.look-swatch__text {
+  font-size: 22px;
+  font-weight: 600;
+}
+.look-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.look-color {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.look-color .look-swatch {
+  width: 40px;
+  height: 30px;
+  border-radius: 8px;
+}
+.look-color.is-active .look-swatch {
+  box-shadow: 0 0 0 2px var(--surface-solid), 0 0 0 4px var(--accent);
+}
+.look-color:first-child .look-swatch {
+  background: linear-gradient(135deg, #f6f6f7 0 50%, #2f3035 50% 100%);
+}
+.look-color--custom .look-swatch {
+  background: conic-gradient(#ff5f6d, #ffc371, #f9f871, #55d88b, #3fb7f5, #7c5cff, #ff5fb4, #ff5f6d);
+}
+.look-color--custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.thumb__note.is-bold {
+  fill: var(--strong);
+}
+.bg--lines {
+  background-image: linear-gradient(transparent 9px, var(--grid) 9px, var(--grid) 10px);
+  background-size: 100% 10px;
+}
+.bg--cross {
+  background-image: radial-gradient(var(--grid) 1.2px, transparent 1.4px);
+  background-size: 12px 12px;
+}
+.fill-sample--bold {
+  background: var(--strong);
+}
+.color--custom.fill-sample--bold {
+  background: var(--c);
 }

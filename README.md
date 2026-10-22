@@ -20,6 +20,9 @@ Built with [Tauri 2](https://tauri.app), React and [React Flow](https://reactflo
 - **Arrows stick** to the items they're drawn between and follow them when they move.
 - **Pictures** can be cropped and captioned; **PDFs and other files** can be dropped in as cards that open in their own app.
 - **Keyboard**: ⌥+arrow keys move between items; items are labelled for screen readers.
+- **Customise board** (⋯ menu, or View → Customise Board…): one-click themes (Classic, Paper, Notebook, Blueprint, Chalkboard, Midnight, Pastel, Terminal), any board colour (dark ones switch items to their dark look), dots / grid / lined / crosses / plain, and a typeface (sans, serif, mono, rounded, handwritten).
+- **Colours**: ten palette colours plus any colour from the system picker, for fills, text, outlines and lines; a **Bold** fill for things that should pop; a **Glow** or gentle **Pulse** to make one item stand out; a typeface per item.
+- **Lines** (select one, then the line-style button): colour, thin / normal / thick, solid / dashed / dotted, arrow / open / dot / diamond ends, and **Flow** (dashes moving along it) or **Pulse** to draw the eye.
 - Select something to style it: **Colour** (with fill style), **Outline**, **Text** (Title → Caption styles, size, alignment, card titles), **Shape**, **Arrange** (align, space evenly, group), **Lock**, and **✨ AI**.
 - **Mind maps**: fold a branch (C) to hide its children, and "Tidy up" to lay branches out neatly.
 - **Link boards**: type `[[Board name]]` in a note, or add a board card (right-click → Link a board here). Boards show what links to them; **⌘[** goes back.

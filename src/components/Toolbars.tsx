@@ -1,5 +1,5 @@
 import { NodeToolbar, Position, useStore as useFlowStore } from "@xyflow/react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { boardStore, defaultLinkData, useBoard } from "../store";
 import {
@@ -15,8 +15,16 @@ import {
   SHAPES,
   SIZES,
   TEXT_STYLES,
+  FONTS,
+  LINK_DASHES,
+  LINK_HEADS,
+  LINK_MOTIONS,
   textStyleOf,
+  type LinkHead,
+  type LinkMotion,
   type Align,
+  type Effect,
+  type Paint,
   type ArrangeMode,
   type Color,
   type ItemData,
@@ -28,6 +36,8 @@ import {
   type TextStyle,
 } from "../types";
 import { useLinkGeometry } from "./LinkLine";
+import { colorLook, FONT_NAMES, isHex, paintCss } from "../look";
+import { headPath } from "../geometry";
 import { ShapeGlyph, SHAPE_NAMES } from "../shapes";
 import { aiSupported } from "../ai";
 import { askClaude, QUICK } from "../assistant/ask";
@@ -66,10 +76,13 @@ export const COLOR_NAMES: Record<Color, string> = {
   plain: "Default",
   yellow: "Yellow",
   orange: "Orange",
+  red: "Red",
   pink: "Pink",
   purple: "Purple",
   blue: "Blue",
+  teal: "Teal",
   green: "Green",
+  gray: "Gray",
 };
 const SIZE_NAMES: Record<Size, string> = { s: "Small", m: "Medium", l: "Large" };
 const SIZED: ReadonlySet<ItemType> = new Set(["note", "shape", "ink", "link"]);
@@ -110,13 +123,29 @@ export function Swatches({
   value,
   onPick,
   strong,
+  custom,
+  auto,
 }: {
-  value: Color | null;
-  onPick: (c: Color) => void;
+  value: Paint | null;
+  onPick: (c: Paint) => void;
   strong?: boolean;
+  /** Also offer any colour, from the system colour picker. */
+  custom?: boolean;
+  /** An "automatic" choice first (e.g. text that follows the item's colour). */
+  auto?: { active: boolean; label: string; onPick: () => void };
 }) {
   return (
     <div className="swatches" role="group" aria-label="Colour">
+      {auto && (
+        <button
+          type="button"
+          className={`swatch swatch--auto${auto.active ? " is-active" : ""}`}
+          title={auto.label}
+          aria-label={auto.label}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={auto.onPick}
+        />
+      )}
       {COLORS.map((c) => (
         <button
           key={c}
@@ -128,7 +157,27 @@ export function Swatches({
           onClick={() => onPick(c)}
         />
       ))}
+      {custom && <CustomSwatch value={value && isHex(value) ? value : null} onPick={onPick} />}
     </div>
+  );
+}
+
+/** Any colour at all, from the system colour picker (one undo step when it's chosen). */
+function CustomSwatch({ value, onPick }: { value: string | null; onPick: (c: Paint) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const pick = useRef(onPick);
+  pick.current = onPick;
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    const onChange = () => pick.current(el.value.toLowerCase() as Paint);
+    el.addEventListener("change", onChange);
+    return () => el.removeEventListener("change", onChange);
+  }, []);
+  return (
+    <label className={`swatch swatch--custom${value ? " is-active" : ""}`} title="Any colour" style={value ? { background: value } : undefined}>
+      <input ref={input} type="color" aria-label="Any colour" defaultValue={value ?? "#7c5cff"} key={value ?? "none"} />
+    </label>
   );
 }
 
@@ -311,14 +360,23 @@ function ColorPanel({ items }: { items: Selected[] }) {
   const inks = items.filter((i) => i.type === "ink" || i.type === "arrow");
   const fillable = items.filter((i) => FILLABLE.has(i.type));
   const arrows = items.filter((i) => i.type === "arrow");
+  // Items with words on a coloured background, whose text colour can be set on its own.
+  const lettered = items.filter((i) => ["note", "shape", "frame", "link", "board", "file"].includes(i.type));
+  const glowing = items.filter((i) => i.type !== "ink" && i.type !== "arrow");
+  const sampleLook = colorLook({ color: only(fillable.map((i) => i.data.color)) ?? "blue", hex: only(fillable.map((i) => i.data.hex ?? null)) ?? undefined });
   const store = boardStore.getState();
   return (
     <>
       <Row label={strong ? "Colour" : "Fill"}>
         <Swatches
-          value={only(colored.map((i) => i.data.color))}
+          value={only(colored.map((i) => (i.data.hex as Paint | undefined) ?? i.data.color))}
           strong={strong}
-          onPick={(c) => boardStore.getState().setColor(colored.map((i) => i.id), c)}
+          custom
+          onPick={(c) =>
+            isHex(c)
+              ? store.styleItems(colored.map((i) => i.id), { hex: c })
+              : store.setColor(colored.map((i) => i.id), c)
+          }
         />
       </Row>
       {fillable.length > 0 && (
@@ -328,6 +386,7 @@ function ColorPanel({ items }: { items: Selected[] }) {
               [
                 ["solid", "Solid"],
                 ["light", "Light"],
+                ["bold", "Bold"],
                 ["hatch", "Hatched"],
                 ["none", "None"],
               ] as const
@@ -340,7 +399,10 @@ function ColorPanel({ items }: { items: Selected[] }) {
                 className={`segmented__item${only(fillable.map((i) => i.data.fill ?? "solid")) === f ? " is-active" : ""}`}
                 onClick={() => store.styleItems(fillable.map((i) => i.id), { fill: f }, FILLABLE)}
               >
-                <span className={`fill-sample fill-sample--${f} color--${only(fillable.map((i) => i.data.color)) ?? "blue"}`} />
+                <span
+                  className={`fill-sample fill-sample--${f} ${sampleLook.className}`}
+                  style={sampleLook.style}
+                />
               </button>
             ))}
           </div>
@@ -358,6 +420,43 @@ function ColorPanel({ items }: { items: Selected[] }) {
               <span className={`pen-dot pen-dot--${sz}`} />
             </ToolButton>
           ))}
+        </Row>
+      )}
+      {lettered.length > 0 && (
+        <Row label="Text colour">
+          <Swatches
+            value={only(lettered.map((i) => i.data.textColor ?? null))}
+            strong
+            custom
+            auto={{
+              active: only(lettered.map((i) => i.data.textColor ?? null)) === null,
+              label: "Automatic text colour",
+              onPick: () => store.styleItems(lettered.map((i) => i.id), { textColor: undefined }),
+            }}
+            onPick={(c) => store.styleItems(lettered.map((i) => i.id), { textColor: c })}
+          />
+        </Row>
+      )}
+      {glowing.length > 0 && (
+        <Row label="Stand out">
+          <div className="segmented segmented--compact">
+            {(
+              [
+                ["none", "None"],
+                ["glow", "Glow"],
+                ["pulse", "Pulse"],
+              ] as [Effect, string][]
+            ).map(([e, name]) => (
+              <button
+                key={e}
+                type="button"
+                className={`segmented__item${only(glowing.map((i) => i.data.effect ?? "none")) === e ? " is-active" : ""}`}
+                onClick={() => store.styleItems(glowing.map((i) => i.id), { effect: e === "none" ? undefined : e })}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
         </Row>
       )}
       {arrows.length > 0 && (
@@ -444,17 +543,13 @@ function OutlinePanel({ items }: { items: Selected[] }) {
         </div>
       </Row>
       <Row label="Colour">
-        <button
-          type="button"
-          className={`swatch swatch--auto${color === null && width !== 0 ? " is-active" : ""}`}
-          title="Match the fill"
-          aria-label="Match the fill"
-          onClick={() => {
-            const patch: Partial<ItemData> = { outlineColor: undefined };
-            ensureVisible(patch);
-          }}
+        <Swatches
+          value={width === 0 ? null : color}
+          strong
+          custom
+          auto={{ active: color === null && width !== 0, label: "Match the fill", onPick: () => ensureVisible({ outlineColor: undefined }) }}
+          onPick={(c) => ensureVisible({ outlineColor: c })}
         />
-        <Swatches value={width === 0 ? null : color} strong onPick={(c) => ensureVisible({ outlineColor: c })} />
       </Row>
     </>
   );
@@ -485,6 +580,30 @@ function TextPanel({ items }: { items: Selected[] }) {
           </div>
         </Row>
       )}
+      <Row label="Typeface">
+        <div className="segmented segmented--compact font-picker">
+          <button
+            type="button"
+            className={`segmented__item${only(items.map((i) => i.data.font ?? null)) === null ? " is-active" : ""}`}
+            title="The board's typeface"
+            onClick={() => store.styleItems(items.map((i) => i.id), { font: undefined })}
+          >
+            Board
+          </button>
+          {FONTS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`segmented__item${only(items.map((i) => i.data.font ?? null)) === f ? " is-active" : ""}`}
+              title={FONT_NAMES[f]}
+              aria-label={FONT_NAMES[f]}
+              onClick={() => store.styleItems(items.map((i) => i.id), { font: f })}
+            >
+              <span className={`font-sample font-sample--${f}`}>Aa</span>
+            </button>
+          ))}
+        </div>
+      </Row>
       {sized.length > 0 && (
         <Row label="Size">
           <SizeButtons value={only(sized.map((i) => i.data.size))} onPick={(s) => store.setSize(sized.map((i) => i.id), s)} />
@@ -606,6 +725,7 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
   const store = boardStore.getState();
   const toggle = (p: Panel) => setOpen((o) => (o === p ? null : p));
   const fill = only(colored.map((i) => i.data.color));
+  const hexFill = only(colored.map((i) => i.data.hex ?? null));
   const strongFill = colored.every((i) => STROKED.has(i.type));
   const locked = items.every((i) => i.data.locked);
 
@@ -614,7 +734,10 @@ export function SelectionToolbar({ onMore }: { onMore: (x: number, y: number) =>
       <div ref={bar} className="floating-bar" onDoubleClick={(e) => e.stopPropagation()}>
         {colored.length > 0 && (
           <PanelButton label="Colour" open={open === "color"} onToggle={() => toggle("color")} panel={<ColorPanel items={items} />}>
-            <span className={`color-dot color--${fill ?? "plain"}${strongFill ? " color-dot--strong" : ""}${fill ? "" : " is-mixed"}`} />
+            <span
+              className={`color-dot color--${fill ?? "plain"}${strongFill ? " color-dot--strong" : ""}${fill ? "" : " is-mixed"}`}
+              style={hexFill ? { background: hexFill } : undefined}
+            />
           </PanelButton>
         )}
         {outlinable && (
@@ -711,7 +834,102 @@ export function LinkToolbar() {
   return link ? <LinkToolbarFor link={link} /> : null;
 }
 
+/** Colour, thickness, pattern, ends and movement for a line. */
+function LineStylePanel({ link }: { link: LinkEdge }) {
+  const d = link.data ?? defaultLinkData();
+  const store = boardStore.getState();
+  const set = (patch: Parameters<typeof store.updateLink>[1]) => store.updateLink(link.id, patch);
+  return (
+    <>
+      <Row label="Colour">
+        <Swatches
+          value={d.color ?? null}
+          strong
+          custom
+          auto={{ active: !d.color, label: "Automatic line colour", onPick: () => set({ color: undefined }) }}
+          onPick={(c) => set({ color: c })}
+        />
+      </Row>
+      <Row label="Thickness">
+        <div className="segmented segmented--compact">
+          {(
+            [
+              [1, "Thin"],
+              [2, "Normal"],
+              [3, "Thick"],
+            ] as const
+          ).map(([w, name]) => (
+            <button key={w} type="button" className={`segmented__item${(d.width ?? 2) === w ? " is-active" : ""}`} onClick={() => set({ width: w })}>
+              <span className="line-width-sample" style={{ height: w === 1 ? 1.5 : w === 2 ? 2.5 : 4 }} />
+              {name}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Pattern">
+        <div className="segmented segmented--compact">
+          {LINK_DASHES.map((p) => (
+            <button key={p} type="button" className={`segmented__item${d.dash === p ? " is-active" : ""}`} onClick={() => set({ dash: p })}>
+              <span className={`line-sample line-sample--${p}`} />
+              {p === "solid" ? "Solid" : p === "dashed" ? "Dashed" : "Dotted"}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Ends">
+        <div className="segmented segmented--compact">
+          {LINK_HEADS.map((h) => (
+            <button
+              key={h}
+              type="button"
+              className={`segmented__item${(d.head ?? "arrow") === h ? " is-active" : ""}`}
+              title={HEAD_NAMES[h]}
+              aria-label={HEAD_NAMES[h]}
+              onClick={() => set({ head: h, ...(d.arrow === "none" ? { arrow: "end" as const } : {}) })}
+            >
+              <HeadGlyph kind={h} />
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Movement">
+        <div className="segmented segmented--compact">
+          {LINK_MOTIONS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={`segmented__item${(d.motion ?? "none") === m ? " is-active" : ""}`}
+              title={MOTION_HINTS[m]}
+              onClick={() => set({ motion: m === "none" ? undefined : m })}
+            >
+              {m === "none" ? "None" : m === "flow" ? "Flow" : "Pulse"}
+            </button>
+          ))}
+        </div>
+      </Row>
+    </>
+  );
+}
+
+const HEAD_NAMES: Record<LinkHead, string> = { arrow: "Arrow", open: "Open arrow", dot: "Dot", diamond: "Diamond" };
+const MOTION_HINTS: Record<LinkMotion, string> = {
+  none: "Still",
+  flow: "Dashes flow along the line, showing its direction",
+  pulse: "A soft glow pulses along the line",
+};
+
+function HeadGlyph({ kind }: { kind: LinkHead }) {
+  const tip = { x: 21, y: 12 };
+  return (
+    <svg width="26" height="24" viewBox="0 0 26 24" aria-hidden className="head-glyph">
+      <line x1="3" y1="12" x2={kind === "open" ? 20 : 13} y2="12" />
+      <path d={headPath(kind, tip, { x: 1, y: 0 }, 10)} className={kind === "open" ? "is-open" : ""} />
+    </svg>
+  );
+}
+
 function LinkToolbarFor({ link }: { link: LinkEdge }) {
+  const [styleOpen, setStyleOpen] = useState(false);
   const geo = useLinkGeometry(link);
   const [tx, ty, zoom] = useFlowStore((s) => s.transform);
   if (!geo) return null;
@@ -750,13 +968,25 @@ function LinkToolbarFor({ link }: { link: LinkEdge }) {
         <SwapIcon />
       </ToolButton>
       <span className="bar-divider" />
-      <ToolButton
-        label="Dashed"
-        active={d.dash === "dashed"}
-        onClick={() => set({ dash: d.dash === "dashed" ? "solid" : "dashed" })}
-      >
-        <DashIcon />
-      </ToolButton>
+      <div className="panel-anchor">
+        <button
+          type="button"
+          className={`tool-btn tool-btn--panel${styleOpen ? " is-active" : ""}`}
+          title="Line style"
+          aria-label="Line style"
+          aria-expanded={styleOpen}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setStyleOpen((o) => !o)}
+        >
+          <span className="line-swatch" style={d.color ? ({ "--lc": paintCss(d.color) } as CSSProperties) : undefined} />
+          <ChevronIcon />
+        </button>
+        {styleOpen && (
+          <Popover label="Line style">
+            <LineStylePanel link={link} />
+          </Popover>
+        )}
+      </div>
       <ToolButton label="Label (Enter)" onClick={() => store.startEditingLabel(link.id)}>
         <LabelIcon />
       </ToolButton>

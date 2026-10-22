@@ -1,6 +1,7 @@
 import type { Viewport } from "@xyflow/react";
 import { nanoid } from "nanoid";
 import { decorate } from "./layout";
+import { asBoardColor, asPaint, isHex } from "./look";
 import { boardStore, cleanEdge, cleanNode, defaultLinkData, type BoardDoc } from "./store";
 import {
   ALIGNS,
@@ -13,6 +14,15 @@ import {
   BOARD_STYLES,
   COLORS,
   FILLS,
+  FONTS,
+  EFFECTS,
+  LINK_DASHES,
+  LINK_HEADS,
+  LINK_MOTIONS,
+  LINK_WIDTHS,
+  type LinkHead,
+  type LinkMotion,
+  type LinkWidth,
   DEFAULT_NOTE_WIDTH,
   ITEM_TYPES,
   SHAPES,
@@ -57,8 +67,24 @@ type SavedItem = {
   endId?: string;
   fileSize?: number;
   crop?: number[];
+  hex?: string;
+  textColor?: string;
+  font?: string;
+  effect?: string;
 };
-type SavedLink = { id: string; from: string; to: string; label: string; curve: string; arrow: string; dash: string };
+type SavedLink = {
+  id: string;
+  from: string;
+  to: string;
+  label: string;
+  curve: string;
+  arrow: string;
+  dash: string;
+  color?: string;
+  width?: number;
+  head?: string;
+  motion?: string;
+};
 type SavedBoard = {
   format: typeof FORMAT;
   version: number;
@@ -69,6 +95,8 @@ type SavedBoard = {
   pinned: boolean;
   background: string;
   style?: string;
+  boardColor?: string;
+  font?: string;
   viewport: Viewport | null;
   items: SavedItem[];
   links: SavedLink[];
@@ -96,6 +124,8 @@ export function toSaved(doc: BoardDoc): SavedBoard {
     pinned: doc.pinned,
     background: doc.background,
     style: doc.style,
+    ...(doc.boardColor && doc.boardColor !== "default" ? { boardColor: doc.boardColor } : {}),
+    ...(doc.font && doc.font !== "sans" ? { font: doc.font } : {}),
     viewport: doc.viewport,
     items: doc.nodes.map((raw) => {
       const n = cleanNode(raw);
@@ -133,6 +163,10 @@ export function toSaved(doc: BoardDoc): SavedBoard {
       if (n.data.endId) item.endId = n.data.endId;
       if (n.data.fileSize) item.fileSize = n.data.fileSize;
       if (n.data.crop) item.crop = n.data.crop;
+      if (n.data.hex) item.hex = n.data.hex;
+      if (n.data.textColor) item.textColor = n.data.textColor;
+      if (n.data.font) item.font = n.data.font;
+      if (n.data.effect) item.effect = n.data.effect;
       return item;
     }),
     links: doc.edges.map(cleanEdge).map((e) => ({
@@ -143,6 +177,10 @@ export function toSaved(doc: BoardDoc): SavedBoard {
       curve: e.data!.curve,
       arrow: e.data!.arrow,
       dash: e.data!.dash,
+      ...(e.data!.color ? { color: e.data!.color } : {}),
+      ...(e.data!.width ? { width: e.data!.width } : {}),
+      ...(e.data!.head ? { head: e.data!.head } : {}),
+      ...(e.data!.motion ? { motion: e.data!.motion } : {}),
     })),
   };
 }
@@ -193,7 +231,12 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     if (type === "text" && it.textStyle) node.data.textStyle = oneOf(it.textStyle, TEXT_STYLES, "body");
     if (it.align) node.data.align = oneOf(it.align, ALIGNS, "left");
     if (it.outline !== undefined) node.data.outline = oneOf(it.outline, OUTLINE_WIDTHS, DEFAULT_OUTLINE[type]);
-    if (it.outlineColor) node.data.outlineColor = oneOf(it.outlineColor, COLORS, "plain");
+    if (it.outlineColor) node.data.outlineColor = asPaint(it.outlineColor) ?? "plain";
+    if (isHex(it.hex)) node.data.hex = it.hex.toLowerCase();
+    if (asPaint(it.textColor)) node.data.textColor = asPaint(it.textColor);
+    if (it.font) node.data.font = oneOf(it.font, FONTS, "sans");
+    const effect = oneOf(it.effect, EFFECTS, "none");
+    if (effect !== "none") node.data.effect = effect;
     if (it.outlineStyle) node.data.outlineStyle = oneOf(it.outlineStyle, OUTLINE_STYLES, "solid");
     if (type === "board") node.data.boardId = str(it.boardId);
     if (it.collapsed === true) node.data.collapsed = true;
@@ -227,7 +270,11 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
         label: str(l.label),
         curve: oneOf(l.curve, ["curved", "straight", "elbow"] as const, d.curve),
         arrow: oneOf(l.arrow, ["none", "end", "both"] as const, d.arrow),
-        dash: oneOf(l.dash, ["solid", "dashed"] as const, d.dash),
+        dash: oneOf(l.dash, LINK_DASHES, d.dash),
+        ...(asPaint(l.color) ? { color: asPaint(l.color) } : {}),
+        ...(LINK_WIDTHS.includes(l.width as never) ? { width: l.width as LinkWidth } : {}),
+        ...(LINK_HEADS.includes(l.head as never) ? { head: l.head as LinkHead } : {}),
+        ...(LINK_MOTIONS.includes(l.motion as never) && l.motion !== "none" ? { motion: l.motion as LinkMotion } : {}),
       },
     });
   }
@@ -245,6 +292,8 @@ export function fromSaved(raw: unknown, fallbackId = "board"): BoardDoc {
     pinned: doc.pinned === true,
     background: oneOf(doc.background, BACKGROUNDS, "dots"),
     style: oneOf(doc.style, BOARD_STYLES, "clean"),
+    boardColor: asBoardColor(doc.boardColor) ?? "default",
+    font: oneOf(doc.font, FONTS, "sans"),
     viewport,
     nodes,
     edges,
@@ -487,6 +536,8 @@ export function currentDoc(): BoardDoc {
     pinned: s.pinned,
     background: s.background,
     style: s.style,
+    boardColor: s.boardColor,
+    font: s.font,
     viewport: s.viewport,
     nodes: s.nodes,
     edges: s.edges,
@@ -541,7 +592,9 @@ export function openInEditor(doc: BoardDoc) {
       s.title === prev.title &&
       s.viewport === prev.viewport &&
       s.background === prev.background &&
-      s.style === prev.style
+      s.style === prev.style &&
+      s.boardColor === prev.boardColor &&
+      s.font === prev.font
     )
       return;
     if (timer) clearTimeout(timer);

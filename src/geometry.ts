@@ -110,6 +110,34 @@ export function arrowHead(tip: Point, dir: Point, length = 11, width = 9): strin
   return `M ${tip.x} ${tip.y} L ${base.x + px} ${base.y + py} L ${base.x - px} ${base.y - py} Z`;
 }
 
+/** SVG path for a line-end marker of the given kind, its tip at `tip`, pointing along `dir`. */
+export function headPath(kind: "arrow" | "open" | "dot" | "diamond", tip: Point, dir: Point, length = 11): string {
+  if (kind === "dot") {
+    const r = length * 0.42;
+    const c = offset(tip, dir, -r);
+    return `M ${c.x - r} ${c.y} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 ${-r * 2} 0 Z`;
+  }
+  if (kind === "diamond") {
+    const half = length * 0.42;
+    const mid = offset(tip, dir, -length * 0.7);
+    const back = offset(tip, dir, -length * 1.4);
+    const px = -dir.y * half;
+    const py = dir.x * half;
+    return `M ${tip.x} ${tip.y} L ${mid.x + px} ${mid.y + py} L ${back.x} ${back.y} L ${mid.x - px} ${mid.y - py} Z`;
+  }
+  if (kind === "open") {
+    const base = offset(tip, dir, -length * 0.85);
+    const px = -dir.y * (length * 0.5);
+    const py = dir.x * (length * 0.5);
+    return `M ${base.x + px} ${base.y + py} L ${tip.x} ${tip.y} L ${base.x - px} ${base.y - py}`;
+  }
+  return arrowHead(tip, dir, length, length * 0.82);
+}
+
+/** How far back from its tip a line stops for each marker, so the line doesn't poke through. */
+export const headInset = (kind: "arrow" | "open" | "dot" | "diamond", length: number) =>
+  kind === "open" ? 1 : kind === "dot" ? length * 0.5 : kind === "diamond" ? length * 1.25 : length - 2;
+
 export function rectsBounds(rects: Rect[]): Rect | null {
   if (!rects.length) return null;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
